@@ -1,0 +1,50 @@
+# Configuration file for RAPTOR Research Assistant
+arxiv:
+  categories: [cs.AI, cs.LG, stat.ML]
+  max_results: 100
+embedding:
+  model: sentence-transformers/all-MiniLM-L6-v2
+vector_db:
+  provider: chroma
+  collection: paper_chunks
+raptor:
+  tree_dir: data/raw/paper_trees
+  levels: [paper, topic, section, chunk]
+  topic_clustering:
+    method: agglomerative # agglomerative or title-based
+    max_topics: 5
+    metric: cosine
+    linkage: average
+  summarization:
+    max_input_chars: 3000
+    max_tokens: 150
+    temperature: 0.3
+llm:
+  default_model: mistral # registry alias: 'mistral' or 'groq-llama'
+  models:
+    mistral:
+      model: mistral:latest
+      api_url: http://localhost:11435/v1/chat/completions
+      api_key: ollama
+      timeout: 180
+    groq-llama:
+      model: llama-3.3-70b-versatile
+      api_url: https://api.groq.com/openai/v1/chat/completions
+      timeout: 30
+  task_params:
+    qa: { max_tokens: 1024, temperature: 0.3 }
+    summarize: { max_tokens: 512, temperature: 0.2 }
+    compare: { max_tokens: 1500, temperature: 0.3 }
+    explain: { max_tokens: 1200, temperature: 0.4 }
+retrieval:
+  top_k: 5
+  include_tree_context: true
+session:
+  max_sessions: 100
+  max_history_turns: 10
+feedback:
+  storage: data/feedback/feedback.jsonl
+  types: [helpful, incorrect, hallucination, correction]
+frontend:
+  type: gradio
+  port: 7860
