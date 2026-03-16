@@ -10,101 +10,255 @@ The system features multi-model LLM reasoning (local Ollama + cloud APIs), a two
 
 ## Architecture Overview
 
+### High-Level System Architecture
+
+```mermaid
+flowchart TB
+    subgraph INGESTION["📥 Data Ingestion Pipeline"]
+        direction LR
+        A1[("🌐 arXiv API<br/>204 papers<br/>cs.AI · cs.LG · stat.ML")]
+        A2["📄 PDF Extraction<br/><i>PyMuPDF</i>"]
+        A3["✂️ Text Chunking<br/>300–500 tokens"]
+        A4["🧮 Embeddings<br/><i>all-MiniLM-L6-v2</i><br/>384 dimensions"]
+        A1 --> A2 --> A3 --> A4
+    end
+
+    subgraph STORAGE["💾 Storage Layer"]
+        direction LR
+        B1[("🗄️ ChromaDB<br/>148,986 chunks<br/>+ metadata<br/>+ embeddings")]
+        B2[("🌳 RAPTOR Trees<br/>204 NetworkX DiGraphs<br/>.gpickle files")]
+    end
+
+    subgraph INDEX["🌲 RAPTOR Hierarchical Index"]
+        direction TB
+        C1["📚 Paper <i>(root)</i>"]
+        C2["🏷️ Topic 1<br/><i>clustered + summary</i>"]
+        C3["🏷️ Topic 2<br/><i>clustered + summary</i>"]
+        C4["📑 Section 1.1<br/><i>title + summary</i>"]
+        C5["📑 Section 1.2"]
+        C6["📑 Section 2.1"]
+        C7["📝 Chunk"] 
+        C8["📝 Chunk"]
+        C9["📝 Chunk"]
+        C1 --> C2 & C3
+        C2 --> C4 & C5
+        C3 --> C6
+        C4 --> C7 & C8
+        C6 --> C9
+    end
+
+    subgraph RETRIEVAL["🔍 Hybrid Retrieval Engine"]
+        direction TB
+        D0["❓ User Query"]
+        D1["Vector Search<br/><i>cosine similarity</i><br/><i>ChromaDB</i>"]
+        D2["RAPTOR Tree Walk-Up<br/><i>chunk → section → topic → paper</i>"]
+        D3["Merged Results<br/><i>chunks + hierarchical context</i>"]
+        D0 --> D1 & D2
+        D1 --> D3
+        D2 --> D3
+    end
+
+    subgraph REASONING["🧠 LLM Reasoning Pipeline"]
+        direction TB
+        E1["📋 Prompt Builder<br/><i>system + context + history + question</i><br/>Tasks: Q&A · Summarize · Compare · Explain"]
+        E2["🤖 Mistral<br/><i>Ollama · Local</i>"]
+        E3["☁️ Llama 3.3 70B<br/><i>Groq · Cloud</i>"]
+        E4["💬 Answer + Citations"]
+        E1 --> E2 & E3
+        E2 --> E4
+        E3 --> E4
+    end
+
+    subgraph INTERFACE["🖥️ User Interface Layer"]
+        direction LR
+        F1["💬 Gradio Chat UI<br/>Multi-turn · Sessions"]
+        F2["⚡ FastAPI Server<br/>19 REST endpoints"]
+    end
+
+    subgraph FEEDBACK["🔄 Feedback & Learning Loop"]
+        direction LR
+        G1["👍👎 User Feedback<br/>helpful · incorrect<br/>hallucination · correction"]
+        G2["📊 Preference Pairs<br/><i>chosen vs rejected</i>"]
+        G3["🎯 DPO Fine-Tuning<br/><i>TRL/PEFT</i>"]
+        G1 --> G2 --> G3
+    end
+
+    INGESTION --> STORAGE
+    STORAGE --> INDEX
+    INDEX --> RETRIEVAL
+    RETRIEVAL --> REASONING
+    REASONING --> INTERFACE
+    INTERFACE --> FEEDBACK
+    FEEDBACK -.->|"improved model"| REASONING
+
+    style INGESTION fill:#e8f5e9,stroke:#2e7d32,stroke-width:2px
+    style STORAGE fill:#e3f2fd,stroke:#1565c0,stroke-width:2px
+    style INDEX fill:#fff3e0,stroke:#ef6c00,stroke-width:2px
+    style RETRIEVAL fill:#f3e5f5,stroke:#7b1fa2,stroke-width:2px
+    style REASONING fill:#fce4ec,stroke:#c62828,stroke-width:2px
+    style INTERFACE fill:#e0f2f1,stroke:#00695c,stroke-width:2px
+    style FEEDBACK fill:#fff9c4,stroke:#f9a825,stroke-width:2px
 ```
-┌─────────────────────────────────────────────────────────────────────┐
-│                        RAPTOR Research Assistant                     │
-├─────────────────────────────────────────────────────────────────────┤
-│                                                                      │
-│  ┌──────────┐   ┌──────────┐   ┌──────────┐   ┌──────────────────┐ │
-│  │  arXiv   │──▶│   PDF    │──▶│ Chunking │──▶│   Embeddings     │ │
-│  │   API    │   │ Extract  │   │ (300-500 │   │ (MiniLM-L6-v2)   │ │
-│  │ (204     │   │ (PyMuPDF)│   │  tokens) │   │   384-dim        │ │
-│  │  papers) │   │          │   │          │   │                  │ │
-│  └──────────┘   └──────────┘   └──────────┘   └────────┬─────────┘ │
-│                                                          │           │
-│                                    ┌─────────────────────▼─────────┐ │
-│                                    │       ChromaDB               │ │
-│                                    │    148,986 chunks            │ │
-│                                    │   + metadata + embeddings    │ │
-│                                    └─────────────┬───────────────┘ │
-│                                                   │                 │
-│  ┌───────────────────────────────────────────────▼───────────────┐ │
-│  │              RAPTOR Hierarchical Index (NetworkX)              │ │
-│  │                                                                │ │
-│  │   Paper (root)                                                 │ │
-│  │     ├── Topic 1 (clustered sections + summary)                │ │
-│  │     │     ├── Section 1.1 (title + summary)                   │ │
-│  │     │     │     ├── Chunk 1                                   │ │
-│  │     │     │     └── Chunk 2                                   │ │
-│  │     │     └── Section 1.2                                     │ │
-│  │     │           └── Chunk 3                                   │ │
-│  │     └── Topic 2                                               │ │
-│  │           └── Section 2.1                                     │ │
-│  │                 ├── Chunk 4                                   │ │
-│  │                 └── Chunk 5                                   │ │
-│  └───────────────────────────────────────────────────────────────┘ │
-│                                                                      │
-│  ┌───────────────────── Retrieval Engine ────────────────────────┐  │
-│  │                                                                │  │
-│  │  User Query ──▶ Embed ──▶ Vector Search (ChromaDB)            │  │
-│  │                    │                  │                        │  │
-│  │                    └──▶ RAPTOR Tree Walk-Up                   │  │
-│  │                         chunk → section → topic → paper       │  │
-│  │                                   │                           │  │
-│  │                    Merge: chunks + hierarchical context        │  │
-│  └────────────────────────────┬──────────────────────────────────┘  │
-│                                │                                     │
-│  ┌─────────────────────────────▼─────────────────────────────────┐  │
-│  │              Prompt Construction                               │  │
-│  │  System Prompt (role) + Context Blocks (paper/topic/section/   │  │
-│  │  chunk) + Chat History + Task Instructions + User Question     │  │
-│  │                                                                │  │
-│  │  Tasks: Q&A | Summarize | Compare | Explain                   │  │
-│  └────────────────────────────┬──────────────────────────────────┘  │
-│                                │                                     │
-│  ┌─────────────────────────────▼─────────────────────────────────┐  │
-│  │              LLM Reasoning (Multi-Model)                       │  │
-│  │                                                                │  │
-│  │  ┌─────────────┐          ┌──────────────────┐                │  │
-│  │  │   Mistral   │          │  Groq Llama 3.3  │                │  │
-│  │  │  (Ollama    │          │  (Cloud API)     │                │  │
-│  │  │   local)    │          │  70B versatile   │                │  │
-│  │  └──────┬──────┘          └────────┬─────────┘                │  │
-│  │         └──────────┬───────────────┘                          │  │
-│  │                    ▼                                          │  │
-│  │              Answer + Citations                               │  │
-│  └────────────────────────────┬──────────────────────────────────┘  │
-│                                │                                     │
-│  ┌─────────────────────────────▼─────────────────────────────────┐  │
-│  │              Gradio Chat UI                                    │  │
-│  │                                                                │  │
-│  │  ┌─────────────────────┐  ┌──────────────────────────────┐   │  │
-│  │  │     Chat Window     │  │  Settings                    │   │  │
-│  │  │  (multi-turn with   │  │  - Task: Q&A/Summarize/...   │   │  │
-│  │  │   session memory)   │  │  - Model: Mistral/Groq       │   │  │
-│  │  │                     │  │  - Top-K slider               │   │  │
-│  │  │  User: How does...  │  │                              │   │  │
-│  │  │  Bot: The Trans...  │  │  Session Management          │   │  │
-│  │  │                     │  │  - New / Load / Switch        │   │  │
-│  │  │  [Send]             │  │                              │   │  │
-│  │  └─────────────────────┘  │  Feedback                    │   │  │
-│  │                            │  [Helpful] [Incorrect]       │   │  │
-│  │                            │  [Hallucination] [Correction]│   │  │
-│  │                            │                              │   │  │
-│  │                            │  Citations Panel             │   │  │
-│  │                            │  - Paper, section, excerpt   │   │  │
-│  │                            └──────────────────────────────┘   │  │
-│  └───────────────────────────────────────────────────────────────┘  │
-│                                                                      │
-│  ┌─────────────── Feedback → RLHF Pipeline (Planned) ───────────┐  │
-│  │                                                                │  │
-│  │  feedback.jsonl ──▶ Preference Pairs ──▶ DPO Fine-Tuning     │  │
-│  │  (helpful/incorrect/   (chosen vs       (TRL/PEFT on         │  │
-│  │   hallucination/        rejected)        local Mistral)       │  │
-│  │   correction)                                                 │  │
-│  └───────────────────────────────────────────────────────────────┘  │
-│                                                                      │
-└─────────────────────────────────────────────────────────────────────┘
+
+### Request Flow — What Happens When You Ask a Question
+
+```mermaid
+sequenceDiagram
+    actor User
+    participant UI as 🖥️ Gradio UI
+    participant Session as 🔑 Session Manager
+    participant Retriever as 🔍 Hybrid Retriever
+    participant ChromaDB as 🗄️ ChromaDB
+    participant Tree as 🌳 RAPTOR Tree
+    participant Prompt as 📋 Prompt Builder
+    participant LLM as 🤖 LLM (Mistral/Groq)
+    participant Feedback as 📊 Feedback Store
+
+    User->>UI: "How does self-attention work?"
+    UI->>Session: get_or_create(session_id)
+    Session-->>UI: session (with chat history)
+    
+    UI->>Retriever: retrieve(query, top_k=5)
+    Retriever->>ChromaDB: vector search (cosine similarity)
+    ChromaDB-->>Retriever: top-5 chunk IDs + text
+    
+    loop For each chunk
+        Retriever->>Tree: walk_up(chunk → section → topic → paper)
+        Tree-->>Retriever: hierarchical context + summaries
+    end
+    
+    Retriever-->>UI: chunks + tree context + citations
+    
+    UI->>Prompt: build_messages(chunks, question, task, history)
+    Prompt-->>UI: [system_msg, user_msg]
+    
+    UI->>LLM: POST /v1/chat/completions
+    LLM-->>UI: generated answer
+    
+    UI->>Session: store(user_msg + assistant_msg + citations)
+    UI-->>User: answer + citations panel
+    
+    User->>Feedback: 👍 Helpful / 👎 Incorrect / etc.
+    Feedback->>Feedback: append to feedback.jsonl
+```
+
+### RAPTOR Tree Structure — How Papers Are Organized
+
+```mermaid
+graph TD
+    subgraph TREE["Example: Attention Is All You Need (1706.03762)"]
+        R["📚 Paper Root<br/><b>Attention Is All You Need</b><br/><i>Vaswani et al. 2017</i>"]
+        
+        T1["🏷️ Topic: Architecture<br/><i>Sections about model design</i><br/>🤖 Summary: <i>The Transformer uses<br/>encoder-decoder with attention...</i>"]
+        T2["🏷️ Topic: Training<br/><i>Sections about optimization</i><br/>🤖 Summary: <i>Training uses Adam optimizer<br/>with warmup and label smoothing...</i>"]
+        T3["🏷️ Topic: Results<br/><i>Sections about experiments</i><br/>🤖 Summary: <i>Achieves SOTA on WMT<br/>translation benchmarks...</i>"]
+        
+        S1["📑 3.1 Encoder-Decoder<br/>🤖 <i>The encoder maps input to<br/>continuous representations...</i>"]
+        S2["📑 3.2 Attention<br/>🤖 <i>Scaled dot-product attention<br/>computes compatibility...</i>"]
+        S3["📑 5.1 Training Data<br/>🤖 <i>WMT 2014 English-German<br/>4.5M sentence pairs...</i>"]
+        S4["📑 6.1 Machine Translation<br/>🤖 <i>Big Transformer achieves<br/>28.4 BLEU on EN-DE...</i>"]
+        
+        CH1["📝 Chunk: <i>An attention function can<br/>be described as mapping a<br/>query and set of key-value<br/>pairs to an output...</i>"]
+        CH2["📝 Chunk: <i>We compute the attention<br/>function on a set of queries<br/>simultaneously, packed into<br/>a matrix Q...</i>"]
+        CH3["📝 Chunk: <i>We trained on the WMT<br/>2014 English-German dataset<br/>consisting of about 4.5<br/>million sentence pairs...</i>"]
+        
+        R --> T1 & T2 & T3
+        T1 --> S1 & S2
+        T2 --> S3
+        T3 --> S4
+        S2 --> CH1 & CH2
+        S3 --> CH3
+    end
+
+    style R fill:#4a148c,color:#fff,stroke:#4a148c
+    style T1 fill:#1565c0,color:#fff,stroke:#1565c0
+    style T2 fill:#1565c0,color:#fff,stroke:#1565c0
+    style T3 fill:#1565c0,color:#fff,stroke:#1565c0
+    style S1 fill:#2e7d32,color:#fff,stroke:#2e7d32
+    style S2 fill:#2e7d32,color:#fff,stroke:#2e7d32
+    style S3 fill:#2e7d32,color:#fff,stroke:#2e7d32
+    style S4 fill:#2e7d32,color:#fff,stroke:#2e7d32
+    style CH1 fill:#ef6c00,color:#fff,stroke:#ef6c00
+    style CH2 fill:#ef6c00,color:#fff,stroke:#ef6c00
+    style CH3 fill:#ef6c00,color:#fff,stroke:#ef6c00
+```
+
+### Component Interaction Map
+
+```mermaid
+graph LR
+    subgraph API["FastAPI Backend"]
+        MCP["mcp_server.py<br/>/retrieve · /prompt · /llm"]
+        CHAT["chat.py<br/>/chat · /chat/session"]
+        FB["feedback.py<br/>/feedback · /feedback/stats"]
+        RET["retrieve.py<br/>/retrieve/tree · /retrieve/papers"]
+    end
+
+    subgraph CORE["Core Logic"]
+        RI["raptor_index.py<br/>Tree Operations"]
+        RT["retrieval.py<br/>Hybrid Retriever"]
+        VDB["vector_db.py<br/>ChromaDB Wrapper"]
+        PB["prompt_builder.py<br/>4 Task Types"]
+        PT["prompt.py<br/>Templates"]
+        LLM["llm_client.py<br/>Model Registry"]
+        SM["session.py<br/>Session Store"]
+        FBS["feedback.py<br/>JSONL Store"]
+    end
+
+    subgraph UI_LAYER["Frontend"]
+        GR["ui.py<br/>Gradio Interface"]
+    end
+
+    subgraph EXTERNAL["External Services"]
+        OL["Ollama<br/>localhost:11435"]
+        GQ["Groq API<br/>Cloud"]
+        CH[("ChromaDB<br/>148K chunks")]
+        FS[("Paper Trees<br/>204 .gpickle")]
+    end
+
+    GR --> RT & PB & LLM & SM & FBS
+    MCP --> RT & PB & LLM
+    CHAT --> RT & PB & LLM & SM
+    FB --> FBS
+    RET --> RT
+
+    RT --> VDB & RI
+    PB --> PT
+    VDB --> CH
+    RI --> FS
+    LLM --> OL & GQ
+
+    style API fill:#e3f2fd,stroke:#1565c0
+    style CORE fill:#f3e5f5,stroke:#7b1fa2
+    style UI_LAYER fill:#e0f2f1,stroke:#00695c
+    style EXTERNAL fill:#fff3e0,stroke:#ef6c00
+```
+
+### Feedback → Fine-Tuning Pipeline (Planned)
+
+```mermaid
+flowchart LR
+    A["💬 Chat Response"] --> B{"👤 User Rates"}
+    B -->|"👍 Helpful"| C["✅ Chosen"]
+    B -->|"👎 Incorrect"| D["❌ Rejected"]
+    B -->|"🚫 Hallucination"| D
+    B -->|"✏️ Correction"| E["✅ User's corrected<br/>text = Chosen<br/>❌ Original = Rejected"]
+    
+    C --> F["📊 Preference Dataset<br/><i>(prompt, chosen, rejected)</i>"]
+    D --> F
+    E --> F
+    
+    F --> G["🎯 DPO Training<br/><i>TRL + PEFT + LoRA</i>"]
+    G --> H["🤖 Fine-Tuned Mistral"]
+    H --> I["🔄 Deploy & Serve"]
+    I -.->|"Better answers<br/>next time"| A
+
+    style C fill:#c8e6c9,stroke:#2e7d32
+    style D fill:#ffcdd2,stroke:#c62828
+    style E fill:#fff9c4,stroke:#f9a825
+    style F fill:#e3f2fd,stroke:#1565c0
+    style G fill:#f3e5f5,stroke:#7b1fa2
+    style H fill:#fce4ec,stroke:#c62828
 ```
 
 ---
