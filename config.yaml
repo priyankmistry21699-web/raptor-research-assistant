@@ -68,14 +68,25 @@ finetune:
     beta: 0.1
 learning_loop:
   auto_enabled: false
-  min_new_feedback: 10          # New feedback entries before auto-trigger
-  check_interval_seconds: 300   # How often to check (5 min)
-  prefer_finetuned: true        # Auto-select fine-tuned model when available
+  min_new_feedback: 10 # New feedback entries before auto-trigger
+  check_interval_seconds: 300 # How often to check (5 min)
+  prefer_finetuned: true # Auto-select fine-tuned model when available
 evaluation:
-  llm_model: ollama/mistral:latest   # LLM judge for RAGAS metrics
+  llm_model: ollama/mistral:latest # LLM judge for RAGAS metrics
   embedding_model: sentence-transformers/all-MiniLM-L6-v2
   default_metrics: [faithfulness, answer_relevancy, context_precision]
   storage: data/evaluation/eval_results.jsonl
+server:
+  host: 0.0.0.0
+  port: 8000
+  cors_origins: ["*"] # Restrict in production: ["http://localhost:7860"]
+  log_level: info
 frontend:
   type: gradio
+  host: 0.0.0.0
   port: 7860
+  tabs: [chat, papers, upload, dashboard]
+  default_model: auto
+  default_task: qa
+  top_k: 5
+  chat_history_turns: 10

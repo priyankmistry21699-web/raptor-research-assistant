@@ -74,3 +74,24 @@ class VectorDB:
             'text': result['documents'][0],
             'metadata': result['metadatas'][0],
         }
+
+    def upsert_chunks(
+        self,
+        ids: List[str],
+        embeddings: List[List[float]],
+        documents: List[str],
+        metadatas: List[Dict[str, Any]],
+        batch_size: int = 500,
+    ) -> int:
+        """Upsert chunks with embeddings into ChromaDB. Returns count upserted."""
+        upserted = 0
+        for i in range(0, len(ids), batch_size):
+            batch_end = min(i + batch_size, len(ids))
+            self.collection.upsert(
+                ids=ids[i:batch_end],
+                embeddings=embeddings[i:batch_end],
+                documents=documents[i:batch_end],
+                metadatas=metadatas[i:batch_end],
+            )
+            upserted += batch_end - i
+        return upserted

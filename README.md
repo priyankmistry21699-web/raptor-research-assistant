@@ -1,6 +1,6 @@
 # RAPTOR Research Assistant
 
-> **Status: In Progress** — Sections 1–14 of 18 complete. Core RAG pipeline, RLHF/DPO fine-tuning loop, continuous learning, and RAGAS evaluation system all operational.
+> **Status: In Progress** — Sections 1–16 of 18 complete. Core RAG pipeline, RLHF/DPO fine-tuning loop, continuous learning, RAGAS evaluation, production backend, and full multi-tab frontend all operational.
 
 A modular AI research assistant that reads, summarizes, compares, and reasons over 200+ ML/DL research papers using **RAPTOR** (Recursive Abstractive Processing for Tree-Organized Retrieval) — a hierarchical RAG approach that organizes papers into tree structures for deeper context-aware retrieval.
 
@@ -211,11 +211,11 @@ graph TD
 
 ```mermaid
 graph LR
-    subgraph API["FastAPI Backend"]
-        MCP["mcp_server.py<br/>/retrieve · /prompt · /llm"]
+    subgraph API["FastAPI Backend (46 routes)"]
+        MCP["mcp_server.py<br/>/prompt · /llm · /health · /status"]
         CHAT["chat.py<br/>/chat · /chat/session"]
         FB["feedback.py<br/>/feedback · /feedback/stats"]
-        RET["retrieve.py<br/>/retrieve/tree · /retrieve/papers"]
+        RET["retrieve.py<br/>/retrieve · /retrieve/tree · /retrieve/papers"]
         TRAIN["train.py<br/>/train/preferences · /train/finetune<br/>/train/loop"]
         EVALAPI["eval.py<br/>/eval/single · /eval/batch<br/>/eval/pipeline · /eval/compare"]
     end
@@ -411,7 +411,7 @@ raptor-research-assistant/
 │   │   └── evaluation.py       # RAGAS evaluation system
 │   │
 │   ├── frontend/
-│   │   └── ui.py               # Gradio chat interface
+│   │   └── ui.py               # Gradio 4-tab UI (Chat, Papers, Upload, Dashboard)
 │   │
 │   └── utils/
 │       └── helpers.py          # Shared utilities
@@ -501,7 +501,7 @@ Task-specific generation parameters (temperature, max_tokens) are automatically 
 
 - **Session management**: Each chat gets a unique session ID with stored history (questions, answers, citations, timestamps)
 - **Multi-turn context**: Last 10 conversation turns are passed to the LLM for context-aware follow-up responses
-- **Gradio UI**: Chat window + settings panel + citation display + session management
+- **Gradio UI**: 4-tab interface — Chat, Paper Browser, Upload, Dashboard
 - **FastAPI endpoints**: `POST /chat`, `GET /chat/sessions`, `GET /chat/session/{id}`
 
 ### 7. Feedback System (Section 10)
@@ -561,61 +561,76 @@ Supports both **manual triggering** and **automatic mode** (background thread ch
 
 RAGAS-powered evaluation for measuring RAG quality:
 
-| Metric                          | What It Measures                              |
-| ------------------------------- | --------------------------------------------- |
-| **Faithfulness**                | Is the answer grounded in retrieved context?  |
-| **Answer Relevancy**            | Does the answer address the question?         |
-| **Context Precision**           | Are the retrieved chunks relevant?            |
-| **Factual Correctness**         | Does the answer match a reference? (optional) |
+| Metric                  | What It Measures                              |
+| ----------------------- | --------------------------------------------- |
+| **Faithfulness**        | Is the answer grounded in retrieved context?  |
+| **Answer Relevancy**    | Does the answer address the question?         |
+| **Context Precision**   | Are the retrieved chunks relevant?            |
+| **Factual Correctness** | Does the answer match a reference? (optional) |
 
 Supports single evaluation, batch evaluation, end-to-end pipeline evaluation (query → retrieve → answer → score), and multi-model comparison (same queries across different models).
 
 **Endpoints**: `POST /eval/single`, `POST /eval/batch`, `POST /eval/pipeline`, `POST /eval/compare`, `GET /eval/history`, `GET /eval/stats`
 
+### 12. Frontend Interface (Section 16)
+
+Four-tab Gradio application on port 7860:
+
+| Tab           | Features                                                                                                                                                   |
+| ------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Chat**      | Multi-turn Q&A, task/model selector, Top-K slider, session management, feedback buttons (helpful/incorrect/hallucination/correction), live citations panel |
+| **Papers**    | Browse all 204 papers, view RAPTOR tree hierarchy (topics → sections → chunks), paper metadata, section summaries                                          |
+| **Upload**    | Add papers via arXiv ID (auto-fetches PDF + metadata) or direct PDF upload. Full pipeline: extract → chunk → embed → ChromaDB → RAPTOR tree                |
+| **Dashboard** | System stats (papers, chunks, topics, sections, summaries), session/feedback counts, active model, fine-tuned model list                                   |
+
 ---
 
-## API Endpoints (39 routes)
+## API Endpoints (46 routes)
 
-| Endpoint                       | Method | Description                                        |
-| ------------------------------ | ------ | -------------------------------------------------- |
-| `/retrieve`                    | POST   | Hybrid vector + tree retrieval                     |
-| `/retrieve/tree`               | POST   | Browse by topic/section                            |
-| `/retrieve/papers`             | GET    | List all 204 paper IDs                             |
-| `/retrieve/paper/{id}`         | GET    | Paper tree overview                                |
-| `/prompt`                      | POST   | Retrieve + build prompt                            |
-| `/llm`                         | POST   | Full pipeline: retrieve → prompt → LLM answer      |
-| `/llm/models`                  | GET    | List available models (incl. fine-tuned)           |
-| `/llm/health`                  | GET    | Check if LLM is responding                         |
-| `/chat`                        | POST   | Session-aware chat (auto-creates session)          |
-| `/chat/session`                | POST   | Create new session                                 |
-| `/chat/session/{id}`           | GET    | Get session history                                |
-| `/chat/sessions`               | GET    | List all sessions                                  |
-| `/chat/session/{id}`           | DELETE | Delete session                                     |
-| `/feedback`                    | POST   | Submit feedback                                    |
-| `/feedback`                    | GET    | Get all feedback                                   |
-| `/feedback/stats`              | GET    | Feedback statistics                                |
-| `/feedback/session/{id}`       | GET    | Feedback for a session                             |
-| `/feedback/type/{type}`        | GET    | Filter by feedback type                            |
-| `/train/preferences/build`     | POST   | Build preference pairs from feedback               |
-| `/train/preferences`           | GET    | Get all preference pairs                           |
-| `/train/preferences/stats`     | GET    | Preference dataset statistics                      |
-| `/train/preferences/export`    | GET    | Export DPO training pairs                          |
-| `/train/finetune`              | POST   | Start DPO fine-tuning run                          |
-| `/train/finetune/status`       | GET    | Check training progress                            |
-| `/train/finetune/models`       | GET    | List fine-tuned models                             |
-| `/train/finetune/register`     | POST   | Register fine-tuned model for inference            |
-| `/train/loop/trigger`          | POST   | Manually trigger learning loop cycle               |
-| `/train/loop/status`           | GET    | Learning loop state                                |
-| `/train/loop/auto`             | POST   | Enable/disable automatic loop                      |
-| `/train/loop/history`          | GET    | History of all loop runs                           |
-| `/train/loop/model`            | GET    | Currently selected best model                      |
-| `/train/loop/config`           | PUT    | Update loop configuration                          |
-| `/eval/single`                 | POST   | Evaluate a single Q&A pair (RAGAS)                 |
-| `/eval/batch`                  | POST   | Evaluate a batch of Q&A samples                    |
-| `/eval/pipeline`               | POST   | End-to-end RAG pipeline evaluation                 |
-| `/eval/compare`                | POST   | Compare multiple models side-by-side               |
-| `/eval/history`                | GET    | Recent evaluation results                          |
-| `/eval/stats`                  | GET    | Aggregate evaluation statistics                    |
+| Endpoint                    | Method | Description                                   |
+| --------------------------- | ------ | --------------------------------------------- |
+| `/`                         | GET    | API overview and route summary                |
+| `/health`                   | GET    | System health check (LLM, ChromaDB, trees)    |
+| `/status`                   | GET    | Full system status (papers, sessions, models) |
+| `/config`                   | GET    | Current configuration (keys redacted)         |
+| `/retrieve`                 | POST   | Hybrid vector + tree retrieval                |
+| `/retrieve/tree`            | POST   | Browse by topic/section                       |
+| `/retrieve/papers`          | GET    | List all 204 paper IDs                        |
+| `/retrieve/paper/{id}`      | GET    | Paper tree overview                           |
+| `/prompt`                   | POST   | Retrieve + build prompt                       |
+| `/llm`                      | POST   | Full pipeline: retrieve → prompt → LLM answer |
+| `/llm/models`               | GET    | List available models (incl. fine-tuned)      |
+| `/llm/health`               | GET    | Check if active LLM is responding             |
+| `/chat`                     | POST   | Session-aware chat (auto model selection)     |
+| `/chat/session`             | POST   | Create new session                            |
+| `/chat/session/{id}`        | GET    | Get session history                           |
+| `/chat/sessions`            | GET    | List all sessions                             |
+| `/chat/session/{id}`        | DELETE | Delete session                                |
+| `/feedback`                 | POST   | Submit feedback                               |
+| `/feedback`                 | GET    | Get all feedback                              |
+| `/feedback/stats`           | GET    | Feedback statistics                           |
+| `/feedback/session/{id}`    | GET    | Feedback for a session                        |
+| `/feedback/type/{type}`     | GET    | Filter by feedback type                       |
+| `/train/preferences/build`  | POST   | Build preference pairs from feedback          |
+| `/train/preferences`        | GET    | Get all preference pairs                      |
+| `/train/preferences/stats`  | GET    | Preference dataset statistics                 |
+| `/train/preferences/export` | GET    | Export DPO training pairs                     |
+| `/train/finetune`           | POST   | Start DPO fine-tuning run                     |
+| `/train/finetune/status`    | GET    | Check training progress                       |
+| `/train/finetune/models`    | GET    | List fine-tuned models                        |
+| `/train/finetune/register`  | POST   | Register fine-tuned model for inference       |
+| `/train/loop/trigger`       | POST   | Manually trigger learning loop cycle          |
+| `/train/loop/status`        | GET    | Learning loop state                           |
+| `/train/loop/auto`          | POST   | Enable/disable automatic loop                 |
+| `/train/loop/history`       | GET    | History of all loop runs                      |
+| `/train/loop/model`         | GET    | Currently selected best model                 |
+| `/train/loop/config`        | PUT    | Update loop configuration                     |
+| `/eval/single`              | POST   | Evaluate a single Q&A pair (RAGAS)            |
+| `/eval/batch`               | POST   | Evaluate a batch of Q&A samples               |
+| `/eval/pipeline`            | POST   | End-to-end RAG pipeline evaluation            |
+| `/eval/compare`             | POST   | Compare multiple models side-by-side          |
+| `/eval/history`             | GET    | Recent evaluation results                     |
+| `/eval/stats`               | GET    | Aggregate evaluation statistics               |
 
 ---
 
@@ -663,21 +678,21 @@ uvicorn app.api.mcp_server:app --port 8000
 
 ## Tech Stack
 
-| Component        | Technology                              |
-| ---------------- | --------------------------------------- |
-| **Embeddings**   | SentenceTransformers (all-MiniLM-L6-v2) |
-| **Vector DB**    | ChromaDB                                |
-| **Tree Index**   | NetworkX (DiGraph)                      |
-| **Clustering**   | scikit-learn (Agglomerative)            |
-| **LLM (local)**  | Ollama + Mistral                        |
-| **LLM (cloud)**  | Groq API + Llama 3.3 70B                |
-| **Fine-Tuning**  | TRL (DPOTrainer) + PEFT (LoRA) + BitsAndBytes |
-| **Evaluation**   | RAGAS (Faithfulness, Relevancy, Precision) |
-| **Backend**      | FastAPI + Pydantic                      |
-| **Frontend**     | Gradio                                  |
-| **Feedback**     | JSONL file storage                      |
-| **Config**       | YAML                                    |
-| **Data Source**   | arXiv API                               |
+| Component       | Technology                                    |
+| --------------- | --------------------------------------------- |
+| **Embeddings**  | SentenceTransformers (all-MiniLM-L6-v2)       |
+| **Vector DB**   | ChromaDB                                      |
+| **Tree Index**  | NetworkX (DiGraph)                            |
+| **Clustering**  | scikit-learn (Agglomerative)                  |
+| **LLM (local)** | Ollama + Mistral                              |
+| **LLM (cloud)** | Groq API + Llama 3.3 70B                      |
+| **Fine-Tuning** | TRL (DPOTrainer) + PEFT (LoRA) + BitsAndBytes |
+| **Evaluation**  | RAGAS (Faithfulness, Relevancy, Precision)    |
+| **Backend**     | FastAPI + Pydantic                            |
+| **Frontend**    | Gradio                                        |
+| **Feedback**    | JSONL file storage                            |
+| **Config**      | YAML                                          |
+| **Data Source** | arXiv API                                     |
 
 ---
 
@@ -697,8 +712,8 @@ uvicorn app.api.mcp_server:app --port 8000
 - [x] **Section 12** — Model Fine-Tuning (TRL/PEFT + DPO + LoRA)
 - [x] **Section 13** — Continuous Learning Loop (auto feedback → train → deploy)
 - [x] **Section 14** — Evaluation System (RAGAS metrics)
-- [ ] **Section 15** — Backend System (unified FastAPI)
-- [ ] **Section 16** — Frontend Interface (full Gradio UI)
+- [x] **Section 15** — Backend System (46-route FastAPI, CORS, health, status)
+- [x] **Section 16** — Frontend Interface (4-tab Gradio UI: Chat, Papers, Upload, Dashboard)
 - [ ] **Section 17** — DevOps & Scalability
 - [ ] **Section 18** — Paper-Specific Learning & Debate
 

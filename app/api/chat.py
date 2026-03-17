@@ -21,7 +21,7 @@ sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '../..')
 from app.core.session import session_manager
 from app.core.retrieval import RaptorRetriever
 from app.core.prompt_builder import build_messages
-from app.core.llm_client import run_llm_messages
+from app.core.llm_client import run_llm_messages, get_active_model
 
 logger = logging.getLogger(__name__)
 
@@ -84,7 +84,7 @@ class ChatRequest(BaseModel):
     message: str
     session_id: Optional[str] = None
     task: str = "qa"
-    model: str = "mistral"
+    model: str = "auto"
     top_k: int = 5
 
 class Citation(BaseModel):
@@ -143,20 +143,23 @@ def chat(req: ChatRequest):
     if chat_history and chat_history[-1]["role"] == "user":
         chat_history = chat_history[:-1]
 
-    # 6. Build messages with history and send to LLM
+    # 6. Resolve model — "auto" picks the best available (prefers fine-tuned)
+    model_alias = req.model if req.model != "auto" else get_active_model()
+
+    # 7. Build messages with history and send to LLM
     messages = build_messages(
         chunks, req.message, task=req.task, chat_history=chat_history or None
     )
-    answer = run_llm_messages(messages, model=req.model, task=req.task)
+    answer = run_llm_messages(messages, model=model_alias, task=req.task)
 
-    # 7. Store assistant response with citations
+    # 8. Store assistant response with citations
     session.add_message(role="assistant", content=answer, citations=citations)
 
     return ChatResponse(
         session_id=session.session_id,
         answer=answer,
         citations=[Citation(**c) for c in citations],
-        model_used=req.model,
+        model_used=model_alias,
     )
 
 
