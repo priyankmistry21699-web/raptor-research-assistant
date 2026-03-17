@@ -45,6 +45,37 @@ session:
 feedback:
   storage: data/feedback/feedback.jsonl
   types: [helpful, incorrect, hallucination, correction]
+preference:
+  storage: data/preference/preferences.jsonl
+  auto_build_on_feedback: true
+finetune:
+  base_model: mistralai/Mistral-7B-v0.1
+  output_dir: models/
+  method: dpo
+  lora:
+    r: 16
+    alpha: 32
+    dropout: 0.05
+    target_modules: [q_proj, k_proj, v_proj, o_proj]
+  training:
+    num_epochs: 1
+    batch_size: 2
+    learning_rate: 5e-5
+    gradient_accumulation_steps: 4
+    max_length: 512
+    max_prompt_length: 256
+  dpo:
+    beta: 0.1
+learning_loop:
+  auto_enabled: false
+  min_new_feedback: 10          # New feedback entries before auto-trigger
+  check_interval_seconds: 300   # How often to check (5 min)
+  prefer_finetuned: true        # Auto-select fine-tuned model when available
+evaluation:
+  llm_model: ollama/mistral:latest   # LLM judge for RAGAS metrics
+  embedding_model: sentence-transformers/all-MiniLM-L6-v2
+  default_metrics: [faithfulness, answer_relevancy, context_precision]
+  storage: data/evaluation/eval_results.jsonl
 frontend:
   type: gradio
   port: 7860

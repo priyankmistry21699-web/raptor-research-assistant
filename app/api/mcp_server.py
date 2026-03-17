@@ -2,11 +2,31 @@
 MCP Server — orchestrates hybrid retrieval, prompt construction, and LLM inference.
 
 Endpoints:
-  POST /retrieve    — hybrid vector search + RAPTOR tree context
-  POST /prompt      — retrieve + build prompt
-  POST /llm         — retrieve + prompt + LLM answer (full pipeline)
-  GET  /llm/models  — list available models
-  GET  /llm/health  — check if current model is responding
+  POST /retrieve                — hybrid vector search + RAPTOR tree context
+  POST /prompt                  — retrieve + build prompt
+  POST /llm                     — retrieve + prompt + LLM answer (full pipeline)
+  GET  /llm/models              — list available models (incl. fine-tuned)
+  GET  /llm/health              — check if current model is responding
+  POST /train/preferences/build — build preference dataset from feedback
+  GET  /train/preferences       — get all preference pairs
+  GET  /train/preferences/stats — preference dataset statistics
+  GET  /train/preferences/export— export clean DPO training pairs
+  POST /train/finetune          — start DPO fine-tuning run
+  GET  /train/finetune/status   — check training progress
+  GET  /train/finetune/models   — list fine-tuned models
+  POST /train/finetune/register — register fine-tuned model for inference
+  POST /train/loop/trigger      — manually trigger learning loop cycle
+  GET  /train/loop/status       — learning loop state
+  POST /train/loop/auto         — enable/disable automatic learning loop
+  GET  /train/loop/history      — history of all loop runs
+  GET  /train/loop/model        — currently selected best model
+  PUT  /train/loop/config       — update loop configuration
+  POST /eval/single             — evaluate a single Q&A pair (RAGAS)
+  POST /eval/batch              — evaluate a batch of Q&A samples
+  POST /eval/pipeline           — end-to-end RAG pipeline evaluation
+  POST /eval/compare            — compare multiple models
+  GET  /eval/history            — recent evaluation results
+  GET  /eval/stats              — aggregate evaluation statistics
 """
 import os
 import sys
@@ -24,10 +44,14 @@ from app.core.prompt_builder import build_prompt, build_messages
 from app.core.llm_client import run_llm, run_llm_messages, list_available_models, check_model_health
 from app.api.chat import router as chat_router
 from app.api.feedback import router as feedback_router
+from app.api.train import router as train_router
+from app.api.eval import router as eval_router
 
 app = FastAPI(title="RAPTOR MCP Server")
 app.include_router(chat_router)
 app.include_router(feedback_router)
+app.include_router(train_router)
+app.include_router(eval_router)
 retriever = RaptorRetriever()
 
 

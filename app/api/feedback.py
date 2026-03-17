@@ -18,6 +18,7 @@ from typing import List, Dict, Any, Optional
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '../..')))
 
 from app.core.feedback import feedback_store, FEEDBACK_TYPES
+from app.core.preference import preference_store
 
 router = APIRouter(prefix="/feedback", tags=["feedback"])
 
@@ -79,6 +80,9 @@ def submit_feedback(req: FeedbackRequest):
         task=req.task,
         citations=req.citations,
     )
+
+    # Auto-create preference pair from this feedback
+    preference_store.add_from_feedback_entry(record)
 
     return FeedbackResponse(
         status="recorded",

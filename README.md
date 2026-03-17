@@ -1,10 +1,10 @@
 # RAPTOR Research Assistant
 
-> **Status: In Progress** — Sections 1–10 of 18 complete. Actively building RLHF pipeline, evaluation system, and fine-tuning workflows.
+> **Status: In Progress** — Sections 1–14 of 18 complete. Core RAG pipeline, RLHF/DPO fine-tuning loop, continuous learning, and RAGAS evaluation system all operational.
 
 A modular AI research assistant that reads, summarizes, compares, and reasons over 200+ ML/DL research papers using **RAPTOR** (Recursive Abstractive Processing for Tree-Organized Retrieval) — a hierarchical RAG approach that organizes papers into tree structures for deeper context-aware retrieval.
 
-The system features multi-model LLM reasoning (local Ollama + cloud APIs), a two-way chatbot with session memory, user feedback collection, and a planned RLHF/DPO fine-tuning loop for continuous improvement.
+The system features multi-model LLM reasoning (local Ollama + cloud APIs), a two-way chatbot with session memory, user feedback collection, preference-based DPO fine-tuning with LoRA adapters, a continuous learning loop, and RAGAS-powered evaluation.
 
 ---
 
@@ -37,7 +37,7 @@ flowchart TB
         C4["📑 Section 1.1<br/><i>title + summary</i>"]
         C5["📑 Section 1.2"]
         C6["📑 Section 2.1"]
-        C7["📝 Chunk"] 
+        C7["📝 Chunk"]
         C8["📝 Chunk"]
         C9["📝 Chunk"]
         C1 --> C2 & C3
@@ -72,15 +72,22 @@ flowchart TB
     subgraph INTERFACE["🖥️ User Interface Layer"]
         direction LR
         F1["💬 Gradio Chat UI<br/>Multi-turn · Sessions"]
-        F2["⚡ FastAPI Server<br/>19 REST endpoints"]
+        F2["⚡ FastAPI Server<br/>39 REST endpoints"]
     end
 
     subgraph FEEDBACK["🔄 Feedback & Learning Loop"]
         direction LR
         G1["👍👎 User Feedback<br/>helpful · incorrect<br/>hallucination · correction"]
         G2["📊 Preference Pairs<br/><i>chosen vs rejected</i>"]
-        G3["🎯 DPO Fine-Tuning<br/><i>TRL/PEFT</i>"]
+        G3["🎯 DPO Fine-Tuning<br/><i>TRL/PEFT + LoRA</i>"]
         G1 --> G2 --> G3
+    end
+
+    subgraph EVAL["📈 Evaluation System"]
+        direction LR
+        H1["🧪 RAGAS Metrics<br/>Faithfulness · Relevancy<br/>Context Precision"]
+        H2["📊 Model Comparison<br/><i>Side-by-side scoring</i>"]
+        H1 --> H2
     end
 
     INGESTION --> STORAGE
@@ -90,6 +97,8 @@ flowchart TB
     REASONING --> INTERFACE
     INTERFACE --> FEEDBACK
     FEEDBACK -.->|"improved model"| REASONING
+    REASONING --> EVAL
+    EVAL -.->|"quality signals"| FEEDBACK
 
     style INGESTION fill:#e8f5e9,stroke:#2e7d32,stroke-width:2px
     style STORAGE fill:#e3f2fd,stroke:#1565c0,stroke-width:2px
@@ -98,6 +107,7 @@ flowchart TB
     style REASONING fill:#fce4ec,stroke:#c62828,stroke-width:2px
     style INTERFACE fill:#e0f2f1,stroke:#00695c,stroke-width:2px
     style FEEDBACK fill:#fff9c4,stroke:#f9a825,stroke-width:2px
+    style EVAL fill:#f3e5f5,stroke:#9c27b0,stroke-width:2px
 ```
 
 ### Request Flow — What Happens When You Ask a Question
@@ -117,27 +127,27 @@ sequenceDiagram
     User->>UI: "How does self-attention work?"
     UI->>Session: get_or_create(session_id)
     Session-->>UI: session (with chat history)
-    
+
     UI->>Retriever: retrieve(query, top_k=5)
     Retriever->>ChromaDB: vector search (cosine similarity)
     ChromaDB-->>Retriever: top-5 chunk IDs + text
-    
+
     loop For each chunk
         Retriever->>Tree: walk_up(chunk → section → topic → paper)
         Tree-->>Retriever: hierarchical context + summaries
     end
-    
+
     Retriever-->>UI: chunks + tree context + citations
-    
+
     UI->>Prompt: build_messages(chunks, question, task, history)
     Prompt-->>UI: [system_msg, user_msg]
-    
+
     UI->>LLM: POST /v1/chat/completions
     LLM-->>UI: generated answer
-    
+
     UI->>Session: store(user_msg + assistant_msg + citations)
     UI-->>User: answer + citations panel
-    
+
     User->>Feedback: 👍 Helpful / 👎 Incorrect / etc.
     Feedback->>Feedback: append to feedback.jsonl
 ```
@@ -148,20 +158,20 @@ sequenceDiagram
 graph TD
     subgraph TREE["Example: Attention Is All You Need (1706.03762)"]
         R["📚 Paper Root<br/><b>Attention Is All You Need</b><br/><i>Vaswani et al. 2017</i>"]
-        
+
         T1["🏷️ Topic: Architecture<br/><i>Sections about model design</i><br/>🤖 Summary: <i>The Transformer uses<br/>encoder-decoder with attention...</i>"]
         T2["🏷️ Topic: Training<br/><i>Sections about optimization</i><br/>🤖 Summary: <i>Training uses Adam optimizer<br/>with warmup and label smoothing...</i>"]
         T3["🏷️ Topic: Results<br/><i>Sections about experiments</i><br/>🤖 Summary: <i>Achieves SOTA on WMT<br/>translation benchmarks...</i>"]
-        
+
         S1["📑 3.1 Encoder-Decoder<br/>🤖 <i>The encoder maps input to<br/>continuous representations...</i>"]
         S2["📑 3.2 Attention<br/>🤖 <i>Scaled dot-product attention<br/>computes compatibility...</i>"]
         S3["📑 5.1 Training Data<br/>🤖 <i>WMT 2014 English-German<br/>4.5M sentence pairs...</i>"]
         S4["📑 6.1 Machine Translation<br/>🤖 <i>Big Transformer achieves<br/>28.4 BLEU on EN-DE...</i>"]
-        
+
         CH1["📝 Chunk: <i>An attention function can<br/>be described as mapping a<br/>query and set of key-value<br/>pairs to an output...</i>"]
         CH2["📝 Chunk: <i>We compute the attention<br/>function on a set of queries<br/>simultaneously, packed into<br/>a matrix Q...</i>"]
         CH3["📝 Chunk: <i>We trained on the WMT<br/>2014 English-German dataset<br/>consisting of about 4.5<br/>million sentence pairs...</i>"]
-        
+
         R --> T1 & T2 & T3
         T1 --> S1 & S2
         T2 --> S3
@@ -192,6 +202,8 @@ graph LR
         CHAT["chat.py<br/>/chat · /chat/session"]
         FB["feedback.py<br/>/feedback · /feedback/stats"]
         RET["retrieve.py<br/>/retrieve/tree · /retrieve/papers"]
+        TRAIN["train.py<br/>/train/preferences · /train/finetune<br/>/train/loop"]
+        EVALAPI["eval.py<br/>/eval/single · /eval/batch<br/>/eval/pipeline · /eval/compare"]
     end
 
     subgraph CORE["Core Logic"]
@@ -200,9 +212,13 @@ graph LR
         VDB["vector_db.py<br/>ChromaDB Wrapper"]
         PB["prompt_builder.py<br/>4 Task Types"]
         PT["prompt.py<br/>Templates"]
-        LLM["llm_client.py<br/>Model Registry"]
+        LLM["llm_client.py<br/>Model Registry +<br/>Fine-tuned Inference"]
         SM["session.py<br/>Session Store"]
         FBS["feedback.py<br/>JSONL Store"]
+        PREF["preference.py<br/>DPO Pair Builder"]
+        FT["finetune.py<br/>DPO + LoRA Training"]
+        LL["learning_loop.py<br/>Auto Learning Cycle"]
+        EV["evaluation.py<br/>RAGAS Metrics"]
     end
 
     subgraph UI_LAYER["Frontend"]
@@ -219,14 +235,18 @@ graph LR
     GR --> RT & PB & LLM & SM & FBS
     MCP --> RT & PB & LLM
     CHAT --> RT & PB & LLM & SM
-    FB --> FBS
+    FB --> FBS & PREF
     RET --> RT
+    TRAIN --> PREF & FT & LL
+    EVALAPI --> EV
 
     RT --> VDB & RI
     PB --> PT
     VDB --> CH
     RI --> FS
     LLM --> OL & GQ
+    LL --> FBS & PREF & FT & LLM
+    EV --> RT & PB & LLM
 
     style API fill:#e3f2fd,stroke:#1565c0
     style CORE fill:#f3e5f5,stroke:#7b1fa2
@@ -234,7 +254,7 @@ graph LR
     style EXTERNAL fill:#fff3e0,stroke:#ef6c00
 ```
 
-### Feedback → Fine-Tuning Pipeline (Planned)
+### Feedback → Fine-Tuning Pipeline
 
 ```mermaid
 flowchart LR
@@ -243,11 +263,11 @@ flowchart LR
     B -->|"👎 Incorrect"| D["❌ Rejected"]
     B -->|"🚫 Hallucination"| D
     B -->|"✏️ Correction"| E["✅ User's corrected<br/>text = Chosen<br/>❌ Original = Rejected"]
-    
+
     C --> F["📊 Preference Dataset<br/><i>(prompt, chosen, rejected)</i>"]
     D --> F
     E --> F
-    
+
     F --> G["🎯 DPO Training<br/><i>TRL + PEFT + LoRA</i>"]
     G --> H["🤖 Fine-Tuned Mistral"]
     H --> I["🔄 Deploy & Serve"]
@@ -269,12 +289,13 @@ flowchart LR
 raptor-research-assistant/
 │
 ├── app/
-│   ├── api/                    # FastAPI endpoints
+│   ├── api/                    # FastAPI endpoints (39 routes)
 │   │   ├── mcp_server.py       # Main server: /retrieve, /prompt, /llm
 │   │   ├── chat.py             # /chat endpoints with session support
 │   │   ├── feedback.py         # /feedback endpoints
 │   │   ├── retrieve.py         # /retrieve router (hybrid search)
-│   │   └── train.py            # /train endpoint (planned)
+│   │   ├── train.py            # /train: preferences, finetune, learning loop
+│   │   └── eval.py             # /eval: RAGAS evaluation endpoints
 │   │
 │   ├── core/                   # Business logic
 │   │   ├── raptor_index.py     # RAPTOR tree operations (NetworkX)
@@ -282,15 +303,16 @@ raptor-research-assistant/
 │   │   ├── vector_db.py        # ChromaDB wrapper
 │   │   ├── prompt_builder.py   # Prompt assembly (4 task types)
 │   │   ├── prompt.py           # Prompt templates
-│   │   ├── llm_client.py       # Multi-model LLM client
+│   │   ├── llm_client.py       # Multi-model LLM client + fine-tuned inference
 │   │   ├── session.py          # In-memory session manager
 │   │   ├── feedback.py         # Feedback storage (JSONL)
 │   │   ├── embedding.py        # SentenceTransformers embeddings
 │   │   ├── ingestion.py        # arXiv paper fetching
 │   │   ├── pdf_processing.py   # PDF text extraction
-│   │   ├── preference.py       # Preference dataset (planned)
-│   │   ├── finetune.py         # DPO fine-tuning (planned)
-│   │   └── evaluation.py       # RAGAS evaluation (planned)
+│   │   ├── preference.py       # Preference dataset (DPO pairs from feedback)
+│   │   ├── finetune.py         # DPO fine-tuning (TRL + PEFT + LoRA)
+│   │   ├── learning_loop.py    # Continuous learning loop orchestrator
+│   │   └── evaluation.py       # RAGAS evaluation system
 │   │
 │   ├── frontend/
 │   │   └── ui.py               # Gradio chat interface
@@ -314,8 +336,11 @@ raptor-research-assistant/
 │   ├── raw/                    # PDFs, metadata, paper trees
 │   ├── embeddings/             # Cached embeddings
 │   ├── processed/              # Processed text
-│   └── feedback/               # User feedback JSONL
+│   ├── feedback/               # User feedback + loop history JSONL
+│   ├── preference/             # DPO preference pairs JSONL
+│   └── evaluation/             # RAGAS evaluation results JSONL
 │
+├── models/                     # Fine-tuned model outputs (LoRA adapters)
 ├── config.yaml                 # All configuration
 ├── requirements.txt            # Python dependencies
 └── PROJECT_PLAN.md             # Full 18-section project plan
@@ -356,12 +381,12 @@ This gives the LLM both the specific text AND the broader context of where that 
 
 Prompts are assembled with 4 task-specific templates:
 
-| Task | Purpose | Temperature |
-|------|---------|-------------|
-| **Q&A** | Answer questions from retrieved context | 0.3 |
-| **Summarize** | Summarize papers or topics | 0.2 |
-| **Compare** | Compare findings across papers | 0.3 |
-| **Explain** | Step-by-step concept explanation | 0.4 |
+| Task          | Purpose                                 | Temperature |
+| ------------- | --------------------------------------- | ----------- |
+| **Q&A**       | Answer questions from retrieved context | 0.3         |
+| **Summarize** | Summarize papers or topics              | 0.2         |
+| **Compare**   | Compare findings across papers          | 0.3         |
+| **Explain**   | Step-by-step concept explanation        | 0.4         |
 
 Each prompt includes: System instruction → Hierarchical context blocks → Chat history → User question → Task-specific instructions.
 
@@ -369,10 +394,10 @@ Each prompt includes: System instruction → Hierarchical context blocks → Cha
 
 Supports switching between models per request:
 
-| Model | Type | Use Case |
-|-------|------|----------|
-| **Mistral** (Ollama) | Local, on-device | Default for all inference, will be fine-tuned later |
-| **Groq Llama 3.3 70B** | Cloud API | Bulk summarization, high-quality answers |
+| Model                  | Type             | Use Case                                            |
+| ---------------------- | ---------------- | --------------------------------------------------- |
+| **Mistral** (Ollama)   | Local, on-device | Default for all inference, will be fine-tuned later |
+| **Groq Llama 3.3 70B** | Cloud API        | Bulk summarization, high-quality answers            |
 
 Task-specific generation parameters (temperature, max_tokens) are automatically applied based on the task type.
 
@@ -387,39 +412,114 @@ Task-specific generation parameters (temperature, max_tokens) are automatically 
 
 After each answer, users can rate the response:
 
-| Feedback | Meaning | Used For |
-|----------|---------|----------|
-| **Helpful** | Accurate and useful | "Chosen" in preference pairs |
-| **Incorrect** | Factual errors | "Rejected" in preference pairs |
-| **Hallucination** | Made up info not in sources | "Rejected" in preference pairs |
-| **Correction** | User writes corrected answer | Corrected text becomes "chosen" |
+| Feedback          | Meaning                      | Used For                        |
+| ----------------- | ---------------------------- | ------------------------------- |
+| **Helpful**       | Accurate and useful          | "Chosen" in preference pairs    |
+| **Incorrect**     | Factual errors               | "Rejected" in preference pairs  |
+| **Hallucination** | Made up info not in sources  | "Rejected" in preference pairs  |
+| **Correction**    | User writes corrected answer | Corrected text becomes "chosen" |
 
-Feedback is stored in JSONL format with full context (question, answer, citations, model, session) — ready for Section 11's preference dataset creation.
+Feedback is stored in JSONL format with full context (question, answer, citations, model, session) — ready for preference dataset creation.
+
+### 8. Preference Dataset (Section 11)
+
+Feedback entries are automatically converted into **DPO preference pairs** (chosen vs. rejected):
+
+- **Helpful** feedback → the original answer becomes the "chosen" response
+- **Incorrect / Hallucination** → the original answer becomes "rejected"
+- **Correction** → the user's corrected text becomes "chosen", original becomes "rejected"
+
+Each pair stores the full prompt (system + context + question) so it can be used directly for DPO fine-tuning. Auto-build triggers on every feedback submission.
+
+**Endpoints**: `POST /train/preferences/build`, `GET /train/preferences`, `GET /train/preferences/stats`, `GET /train/preferences/export`
+
+### 9. DPO Fine-Tuning (Section 12)
+
+Full fine-tuning pipeline using **TRL** (DPOTrainer) with **PEFT** (LoRA adapters) and 4-bit quantization:
+
+- **Base model**: Mistral-7B-v0.1 (configurable)
+- **LoRA config**: r=16, alpha=32, targets q/k/v/o projections
+- **Quantization**: 4-bit NF4 via BitsAndBytes
+- **Training**: DPO with β=0.1, auto gradient accumulation
+- **Output**: LoRA adapters saved to `models/dpo_<timestamp>/`
+
+Registered fine-tuned models are automatically available for inference — `llm_client.py` detects `is_finetuned` and loads the base model + LoRA adapter locally using PeftModel.
+
+**Endpoints**: `POST /train/finetune`, `GET /train/finetune/status`, `GET /train/finetune/models`, `POST /train/finetune/register`
+
+### 10. Continuous Learning Loop (Section 13)
+
+Automated orchestrator that closes the loop: feedback → preferences → training → deployment:
+
+1. Check if enough new feedback has accumulated (configurable threshold)
+2. Build preference pairs from recent feedback
+3. Export training-ready DPO data
+4. Run DPO fine-tuning
+5. Register the new model and set as active
+
+Supports both **manual triggering** and **automatic mode** (background thread checks every N seconds). History of all loop runs is stored in JSONL.
+
+**Endpoints**: `POST /train/loop/trigger`, `GET /train/loop/status`, `POST /train/loop/auto`, `GET /train/loop/history`, `GET /train/loop/model`, `PUT /train/loop/config`
+
+### 11. Evaluation System (Section 14)
+
+RAGAS-powered evaluation for measuring RAG quality:
+
+| Metric                          | What It Measures                              |
+| ------------------------------- | --------------------------------------------- |
+| **Faithfulness**                | Is the answer grounded in retrieved context?  |
+| **Answer Relevancy**            | Does the answer address the question?         |
+| **Context Precision**           | Are the retrieved chunks relevant?            |
+| **Factual Correctness**         | Does the answer match a reference? (optional) |
+
+Supports single evaluation, batch evaluation, end-to-end pipeline evaluation (query → retrieve → answer → score), and multi-model comparison (same queries across different models).
+
+**Endpoints**: `POST /eval/single`, `POST /eval/batch`, `POST /eval/pipeline`, `POST /eval/compare`, `GET /eval/history`, `GET /eval/stats`
 
 ---
 
-## API Endpoints
+## API Endpoints (39 routes)
 
-| Endpoint | Method | Description |
-|----------|--------|-------------|
-| `/retrieve` | POST | Hybrid vector + tree retrieval |
-| `/retrieve/tree` | POST | Browse by topic/section |
-| `/retrieve/papers` | GET | List all 204 paper IDs |
-| `/retrieve/paper/{id}` | GET | Paper tree overview |
-| `/prompt` | POST | Retrieve + build prompt |
-| `/llm` | POST | Full pipeline: retrieve → prompt → LLM answer |
-| `/llm/models` | GET | List available models |
-| `/llm/health` | GET | Check if LLM is responding |
-| `/chat` | POST | Session-aware chat (auto-creates session) |
-| `/chat/session` | POST | Create new session |
-| `/chat/session/{id}` | GET | Get session history |
-| `/chat/sessions` | GET | List all sessions |
-| `/chat/session/{id}` | DELETE | Delete session |
-| `/feedback` | POST | Submit feedback |
-| `/feedback` | GET | Get all feedback |
-| `/feedback/stats` | GET | Feedback statistics |
-| `/feedback/session/{id}` | GET | Feedback for a session |
-| `/feedback/type/{type}` | GET | Filter by feedback type |
+| Endpoint                       | Method | Description                                        |
+| ------------------------------ | ------ | -------------------------------------------------- |
+| `/retrieve`                    | POST   | Hybrid vector + tree retrieval                     |
+| `/retrieve/tree`               | POST   | Browse by topic/section                            |
+| `/retrieve/papers`             | GET    | List all 204 paper IDs                             |
+| `/retrieve/paper/{id}`         | GET    | Paper tree overview                                |
+| `/prompt`                      | POST   | Retrieve + build prompt                            |
+| `/llm`                         | POST   | Full pipeline: retrieve → prompt → LLM answer      |
+| `/llm/models`                  | GET    | List available models (incl. fine-tuned)           |
+| `/llm/health`                  | GET    | Check if LLM is responding                         |
+| `/chat`                        | POST   | Session-aware chat (auto-creates session)          |
+| `/chat/session`                | POST   | Create new session                                 |
+| `/chat/session/{id}`           | GET    | Get session history                                |
+| `/chat/sessions`               | GET    | List all sessions                                  |
+| `/chat/session/{id}`           | DELETE | Delete session                                     |
+| `/feedback`                    | POST   | Submit feedback                                    |
+| `/feedback`                    | GET    | Get all feedback                                   |
+| `/feedback/stats`              | GET    | Feedback statistics                                |
+| `/feedback/session/{id}`       | GET    | Feedback for a session                             |
+| `/feedback/type/{type}`        | GET    | Filter by feedback type                            |
+| `/train/preferences/build`     | POST   | Build preference pairs from feedback               |
+| `/train/preferences`           | GET    | Get all preference pairs                           |
+| `/train/preferences/stats`     | GET    | Preference dataset statistics                      |
+| `/train/preferences/export`    | GET    | Export DPO training pairs                          |
+| `/train/finetune`              | POST   | Start DPO fine-tuning run                          |
+| `/train/finetune/status`       | GET    | Check training progress                            |
+| `/train/finetune/models`       | GET    | List fine-tuned models                             |
+| `/train/finetune/register`     | POST   | Register fine-tuned model for inference            |
+| `/train/loop/trigger`          | POST   | Manually trigger learning loop cycle               |
+| `/train/loop/status`           | GET    | Learning loop state                                |
+| `/train/loop/auto`             | POST   | Enable/disable automatic loop                      |
+| `/train/loop/history`          | GET    | History of all loop runs                           |
+| `/train/loop/model`            | GET    | Currently selected best model                      |
+| `/train/loop/config`           | PUT    | Update loop configuration                          |
+| `/eval/single`                 | POST   | Evaluate a single Q&A pair (RAGAS)                 |
+| `/eval/batch`                  | POST   | Evaluate a batch of Q&A samples                    |
+| `/eval/pipeline`               | POST   | End-to-end RAG pipeline evaluation                 |
+| `/eval/compare`                | POST   | Compare multiple models side-by-side               |
+| `/eval/history`                | GET    | Recent evaluation results                          |
+| `/eval/stats`                  | GET    | Aggregate evaluation statistics                    |
 
 ---
 
@@ -467,19 +567,21 @@ uvicorn app.api.mcp_server:app --port 8000
 
 ## Tech Stack
 
-| Component | Technology |
-|-----------|-----------|
-| **Embeddings** | SentenceTransformers (all-MiniLM-L6-v2) |
-| **Vector DB** | ChromaDB |
-| **Tree Index** | NetworkX (DiGraph) |
-| **Clustering** | scikit-learn (Agglomerative) |
-| **LLM (local)** | Ollama + Mistral |
-| **LLM (cloud)** | Groq API + Llama 3.3 70B |
-| **Backend** | FastAPI + Pydantic |
-| **Frontend** | Gradio |
-| **Feedback** | JSONL file storage |
-| **Config** | YAML |
-| **Data Source** | arXiv API |
+| Component        | Technology                              |
+| ---------------- | --------------------------------------- |
+| **Embeddings**   | SentenceTransformers (all-MiniLM-L6-v2) |
+| **Vector DB**    | ChromaDB                                |
+| **Tree Index**   | NetworkX (DiGraph)                      |
+| **Clustering**   | scikit-learn (Agglomerative)            |
+| **LLM (local)**  | Ollama + Mistral                        |
+| **LLM (cloud)**  | Groq API + Llama 3.3 70B                |
+| **Fine-Tuning**  | TRL (DPOTrainer) + PEFT (LoRA) + BitsAndBytes |
+| **Evaluation**   | RAGAS (Faithfulness, Relevancy, Precision) |
+| **Backend**      | FastAPI + Pydantic                      |
+| **Frontend**     | Gradio                                  |
+| **Feedback**     | JSONL file storage                      |
+| **Config**       | YAML                                    |
+| **Data Source**   | arXiv API                               |
 
 ---
 
@@ -495,10 +597,10 @@ uvicorn app.api.mcp_server:app --port 8000
 - [x] **Section 8** — Multi-Model LLM Reasoning
 - [x] **Section 9** — Two-Way Chatbot with Sessions
 - [x] **Section 10** — Feedback System
-- [ ] **Section 11** — Preference Dataset Creation (DPO pairs)
-- [ ] **Section 12** — Model Fine-Tuning (TRL/PEFT + DPO)
-- [ ] **Section 13** — Continuous Learning Loop
-- [ ] **Section 14** — Evaluation System (RAGAS)
+- [x] **Section 11** — Preference Dataset Creation (DPO pairs from feedback)
+- [x] **Section 12** — Model Fine-Tuning (TRL/PEFT + DPO + LoRA)
+- [x] **Section 13** — Continuous Learning Loop (auto feedback → train → deploy)
+- [x] **Section 14** — Evaluation System (RAGAS metrics)
 - [ ] **Section 15** — Backend System (unified FastAPI)
 - [ ] **Section 16** — Frontend Interface (full Gradio UI)
 - [ ] **Section 17** — DevOps & Scalability
@@ -508,15 +610,15 @@ uvicorn app.api.mcp_server:app --port 8000
 
 ## Data Stats
 
-| Metric | Value |
-|--------|-------|
-| Papers indexed | 204 |
-| Total chunks | 148,986 |
-| Sections | 1,349 |
-| Topics | 659 |
-| Papers with 4-level trees | 105 |
-| Embedding dimensions | 384 |
-| Categories | cs.AI, cs.LG, stat.ML |
+| Metric                    | Value                 |
+| ------------------------- | --------------------- |
+| Papers indexed            | 204                   |
+| Total chunks              | 148,986               |
+| Sections                  | 1,349                 |
+| Topics                    | 659                   |
+| Papers with 4-level trees | 105                   |
+| Embedding dimensions      | 384                   |
+| Categories                | cs.AI, cs.LG, stat.ML |
 
 ---
 
@@ -526,4 +628,4 @@ This project is for educational and research purposes.
 
 ---
 
-*Built with RAPTOR RAG, Ollama, ChromaDB, and a lot of research papers.*
+_Built with RAPTOR RAG, Ollama, ChromaDB, and a lot of research papers._

@@ -118,7 +118,7 @@ def extract_title_from_pdf(pdf_path):
 
 
 def llm_summarize(text, prompt_template, max_input_chars=3000):
-    """Call LLM to generate a summary."""
+    """Call LLM to generate a summary with exponential backoff for rate limits."""
     if not LLM_API_KEY:
         return ''
     truncated = text[:max_input_chars]
@@ -133,16 +133,26 @@ def llm_summarize(text, prompt_template, max_input_chars=3000):
         "max_tokens": 150,
         "temperature": 0.3
     }
-    try:
-        response = requests.post(LLM_API_URL, headers=headers, json=payload, timeout=180)
-        if response.status_code == 429:
-            time.sleep(2)
+    max_retries = 8
+    for attempt in range(max_retries):
+        try:
             response = requests.post(LLM_API_URL, headers=headers, json=payload, timeout=180)
-        response.raise_for_status()
-        return response.json()["choices"][0]["message"]["content"].strip()
-    except Exception as e:
-        print(f"  LLM error: {e}")
-        return ''
+            if response.status_code == 429:
+                wait = min(30 * (2 ** attempt), 120)
+                print(f"  Rate limited, waiting {wait}s (attempt {attempt+1}/{max_retries})")
+                time.sleep(wait)
+                continue
+            response.raise_for_status()
+            return response.json()["choices"][0]["message"]["content"].strip()
+        except Exception as e:
+            if attempt < max_retries - 1:
+                wait = min(30 * (2 ** attempt), 120)
+                print(f"  LLM error: {e}, retrying in {wait}s...")
+                time.sleep(wait)
+            else:
+                print(f"  LLM error (giving up): {e}")
+                return ''
+    return ''
 
 
 def assign_topic_by_title(section_title):
@@ -308,7 +318,7 @@ def step_add_section_summaries(paper_filter=None):
                 stats['summarized'] += 1
             else:
                 stats['failed'] += 1
-            time.sleep(0.3)
+            time.sleep(10)
 
         save_tree(arxiv_id, G)
 
@@ -485,7 +495,7 @@ def step_add_topic_summaries(paper_filter=None):
                 stats['summarized'] += 1
             else:
                 stats['failed'] += 1
-            time.sleep(0.3)
+            time.sleep(10)
 
         save_tree(arxiv_id, G)
 
