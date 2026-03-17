@@ -1,6 +1,6 @@
 # RAPTOR Research Assistant
 
-> **Status: In Progress** — Sections 1–16 of 18 complete. Core RAG pipeline, RLHF/DPO fine-tuning loop, continuous learning, RAGAS evaluation, production backend, and full multi-tab frontend all operational.
+> **Status: In Progress** — Sections 1–17 of 18 complete. Core RAG pipeline, RLHF/DPO fine-tuning loop, continuous learning, RAGAS evaluation, production backend, full multi-tab frontend, and comprehensive test suite all operational.
 
 A modular AI research assistant that reads, summarizes, compares, and reasons over 200+ ML/DL research papers using **RAPTOR** (Recursive Abstractive Processing for Tree-Organized Retrieval) — a hierarchical RAG approach that organizes papers into tree structures for deeper context-aware retrieval.
 
@@ -425,8 +425,22 @@ raptor-research-assistant/
 │   ├── walkthrough_example.py  # Demo: full pipeline walkthrough
 │   └── ...                     # Various utility scripts
 │
-├── tests/
-│   └── test_raptor_index.py    # 27 tests for tree operations
+├── tests/                      # Comprehensive pytest suite (208 tests)
+│   ├── conftest.py             # Shared fixtures
+│   ├── test_api.py             # FastAPI endpoint tests
+│   ├── test_config.py          # Config validation
+│   ├── test_embedding.py       # Embedding model tests
+│   ├── test_feedback.py        # Feedback system tests
+│   ├── test_finetune_loop.py   # Fine-tuning & learning loop tests
+│   ├── test_frontend.py        # UI import & helper tests
+│   ├── test_ingestion.py       # Data ingestion tests
+│   ├── test_llm_client.py      # LLM client/registry tests
+│   ├── test_preference.py      # Preference pair tests
+│   ├── test_prompt.py          # Prompt builder tests
+│   ├── test_raptor_tree.py     # RAPTOR tree operations tests
+│   ├── test_retrieval.py       # Retrieval pipeline tests
+│   ├── test_session.py         # Session management tests
+│   └── test_vector_db.py       # Vector DB tests
 │
 ├── data/                       # (gitignored — local data)
 │   ├── raw/                    # PDFs, metadata, paper trees
@@ -583,6 +597,39 @@ Four-tab Gradio application on port 7860:
 | **Upload**    | Add papers via arXiv ID (auto-fetches PDF + metadata) or direct PDF upload. Full pipeline: extract → chunk → embed → ChromaDB → RAPTOR tree                |
 | **Dashboard** | System stats (papers, chunks, topics, sections, summaries), session/feedback counts, active model, fine-tuned model list                                   |
 
+### 13. DevOps & Testing (Section 17)
+
+Comprehensive pytest test suite covering all modules — **208 tests, 15 test files**:
+
+| Test File              | Module(s) Covered                                     | Tests |
+| ---------------------- | ----------------------------------------------------- | ----- |
+| `test_config.py`       | All 14 config.yaml sections (parametrized)            | 30    |
+| `test_api.py`          | All FastAPI endpoints (system, chat, feedback, train, eval, LLM) | 30 |
+| `test_session.py`      | Session, SessionManager (create, delete, eviction)    | 18    |
+| `test_feedback.py`     | FeedbackEntry, FeedbackStore (add, query, persist)    | 13    |
+| `test_prompt.py`       | Prompt templates, build_prompt, build_messages         | 14    |
+| `test_preference.py`   | Preference pairs, PreferenceStore, DPO export          | 9     |
+| `test_embedding.py`    | EmbeddingModel (encode, dimensions, similarity)        | 6     |
+| `test_vector_db.py`    | VectorDB (search, upsert, get_by_id, filter)           | 7     |
+| `test_llm_client.py`   | MODEL_REGISTRY, TASK_PARAMS, model listing              | 8     |
+| `test_ingestion.py`    | Ingestion constants, metadata save/load                 | 4     |
+| `test_raptor_tree.py`  | RAPTOR tree operations (load, traverse, stats)          | 15    |
+| `test_retrieval.py`    | RaptorRetriever (vector, tree, hybrid retrieval)        | 9     |
+| `test_frontend.py`     | UI imports, helper functions (citations, dashboard)     | 9     |
+| `test_finetune_loop.py`| Finetune, LearningLoop, Evaluation modules              | 10    |
+| `conftest.py`          | Shared fixtures (config, sessions, temp stores)         | —     |
+
+```bash
+# Run all tests
+python -m pytest tests/ -v
+
+# Run a specific module
+python -m pytest tests/test_api.py -v
+
+# Run with coverage
+python -m pytest tests/ --cov=app --cov-report=term-missing
+```
+
 ---
 
 ## API Endpoints (46 routes)
@@ -689,8 +736,7 @@ uvicorn app.api.mcp_server:app --port 8000
 | **Fine-Tuning** | TRL (DPOTrainer) + PEFT (LoRA) + BitsAndBytes |
 | **Evaluation**  | RAGAS (Faithfulness, Relevancy, Precision)    |
 | **Backend**     | FastAPI + Pydantic                            |
-| **Frontend**    | Gradio                                        |
-| **Feedback**    | JSONL file storage                            |
+| **Frontend**    | Gradio                                        || **Testing**   | pytest + FastAPI TestClient                   || **Feedback**    | JSONL file storage                            |
 | **Config**      | YAML                                          |
 | **Data Source** | arXiv API                                     |
 
@@ -714,7 +760,7 @@ uvicorn app.api.mcp_server:app --port 8000
 - [x] **Section 14** — Evaluation System (RAGAS metrics)
 - [x] **Section 15** — Backend System (46-route FastAPI, CORS, health, status)
 - [x] **Section 16** — Frontend Interface (4-tab Gradio UI: Chat, Papers, Upload, Dashboard)
-- [ ] **Section 17** — DevOps & Scalability
+- [x] **Section 17** — DevOps & Scalability (config-driven settings, pytest test suite with 208 tests)
 - [ ] **Section 18** — Paper-Specific Learning & Debate
 
 ---
