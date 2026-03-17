@@ -63,10 +63,12 @@ flowchart TB
         E1["📋 Prompt Builder<br/><i>system + context + history + question</i><br/>Tasks: Q&A · Summarize · Compare · Explain"]
         E2["🤖 Mistral<br/><i>Ollama · Local</i>"]
         E3["☁️ Llama 3.3 70B<br/><i>Groq · Cloud</i>"]
+        E5["🧬 Fine-Tuned Mistral<br/><i>Base + LoRA Adapter</i><br/><i>Local PeftModel inference</i>"]
         E4["💬 Answer + Citations"]
-        E1 --> E2 & E3
+        E1 --> E2 & E3 & E5
         E2 --> E4
         E3 --> E4
+        E5 --> E4
     end
 
     subgraph INTERFACE["🖥️ User Interface Layer"]
@@ -75,19 +77,22 @@ flowchart TB
         F2["⚡ FastAPI Server<br/>39 REST endpoints"]
     end
 
-    subgraph FEEDBACK["🔄 Feedback & Learning Loop"]
+    subgraph LEARNING["🔄 Continuous Learning Loop"]
         direction LR
         G1["👍👎 User Feedback<br/>helpful · incorrect<br/>hallucination · correction"]
         G2["📊 Preference Pairs<br/><i>chosen vs rejected</i>"]
-        G3["🎯 DPO Fine-Tuning<br/><i>TRL/PEFT + LoRA</i>"]
-        G1 --> G2 --> G3
+        G3["🎯 DPO Training<br/><i>TRL + PEFT + LoRA</i><br/><i>4-bit quantization</i>"]
+        G4["📦 Register Model<br/><i>LoRA adapter → registry</i>"]
+        G1 --> G2 --> G3 --> G4
     end
 
-    subgraph EVAL["📈 Evaluation System"]
-        direction LR
-        H1["🧪 RAGAS Metrics<br/>Faithfulness · Relevancy<br/>Context Precision"]
-        H2["📊 Model Comparison<br/><i>Side-by-side scoring</i>"]
-        H1 --> H2
+    subgraph EVAL["📈 Evaluation System (RAGAS)"]
+        direction TB
+        H1["🧪 Faithfulness<br/><i>grounded in context?</i>"]
+        H2["🎯 Answer Relevancy<br/><i>addresses the question?</i>"]
+        H3["📐 Context Precision<br/><i>retrieved chunks relevant?</i>"]
+        H4["📊 Model Comparison<br/><i>side-by-side scoring</i>"]
+        H1 & H2 & H3 --> H4
     end
 
     INGESTION --> STORAGE
@@ -95,10 +100,10 @@ flowchart TB
     INDEX --> RETRIEVAL
     RETRIEVAL --> REASONING
     REASONING --> INTERFACE
-    INTERFACE --> FEEDBACK
-    FEEDBACK -.->|"improved model"| REASONING
+    INTERFACE --> LEARNING
+    LEARNING -->|"LoRA adapter<br/>registered"| REASONING
     REASONING --> EVAL
-    EVAL -.->|"quality signals"| FEEDBACK
+    EVAL -.->|"quality signals<br/>guide model selection"| LEARNING
 
     style INGESTION fill:#e8f5e9,stroke:#2e7d32,stroke-width:2px
     style STORAGE fill:#e3f2fd,stroke:#1565c0,stroke-width:2px
@@ -106,8 +111,8 @@ flowchart TB
     style RETRIEVAL fill:#f3e5f5,stroke:#7b1fa2,stroke-width:2px
     style REASONING fill:#fce4ec,stroke:#c62828,stroke-width:2px
     style INTERFACE fill:#e0f2f1,stroke:#00695c,stroke-width:2px
-    style FEEDBACK fill:#fff9c4,stroke:#f9a825,stroke-width:2px
-    style EVAL fill:#f3e5f5,stroke:#9c27b0,stroke-width:2px
+    style LEARNING fill:#fff9c4,stroke:#f9a825,stroke-width:2px
+    style EVAL fill:#ede7f6,stroke:#9c27b0,stroke-width:2px
 ```
 
 ### Request Flow — What Happens When You Ask a Question
@@ -121,8 +126,9 @@ sequenceDiagram
     participant ChromaDB as 🗄️ ChromaDB
     participant Tree as 🌳 RAPTOR Tree
     participant Prompt as 📋 Prompt Builder
-    participant LLM as 🤖 LLM (Mistral/Groq)
+    participant LLM as 🤖 LLM Client
     participant Feedback as 📊 Feedback Store
+    participant Pref as 📋 Preference Builder
 
     User->>UI: "How does self-attention work?"
     UI->>Session: get_or_create(session_id)
@@ -142,14 +148,22 @@ sequenceDiagram
     UI->>Prompt: build_messages(chunks, question, task, history)
     Prompt-->>UI: [system_msg, user_msg]
 
-    UI->>LLM: POST /v1/chat/completions
-    LLM-->>UI: generated answer
+    alt Base Model (Ollama/Groq)
+        UI->>LLM: POST /v1/chat/completions
+        LLM-->>UI: generated answer
+    else Fine-Tuned Model (LoRA)
+        UI->>LLM: _run_finetuned_inference()
+        Note over LLM: Load base + LoRA adapter<br/>via PeftModel (cached)
+        LLM-->>UI: generated answer
+    end
 
     UI->>Session: store(user_msg + assistant_msg + citations)
     UI-->>User: answer + citations panel
 
-    User->>Feedback: 👍 Helpful / 👎 Incorrect / etc.
+    User->>Feedback: 👍 Helpful / 👎 Incorrect / ✏️ Correction
     Feedback->>Feedback: append to feedback.jsonl
+    Feedback->>Pref: auto-build preference pair
+    Note over Pref: (prompt, chosen, rejected)<br/>stored for DPO training
 ```
 
 ### RAPTOR Tree Structure — How Papers Are Organized
@@ -279,6 +293,88 @@ flowchart LR
     style F fill:#e3f2fd,stroke:#1565c0
     style G fill:#f3e5f5,stroke:#7b1fa2
     style H fill:#fce4ec,stroke:#c62828
+```
+
+### Continuous Learning Loop — Automated Improvement Cycle
+
+```mermaid
+flowchart TB
+    subgraph TRIGGER["⏰ Trigger"]
+        T1["Manual<br/><i>POST /train/loop/trigger</i>"]
+        T2["Automatic<br/><i>background thread<br/>checks every N sec</i>"]
+    end
+
+    CHECK["📋 Check Feedback Volume<br/><i>min_new_feedback threshold</i>"]
+    BUILD["📊 Build Preference Pairs<br/><i>feedback → (prompt, chosen, rejected)</i>"]
+    EXPORT["📤 Export DPO Dataset<br/><i>filter valid pairs</i>"]
+    TRAIN["🎯 DPO Fine-Tuning<br/><i>TRL + PEFT + LoRA</i><br/><i>4-bit quantization</i>"]
+    REGISTER["📦 Register Model<br/><i>add to MODEL_REGISTRY</i><br/><i>is_finetuned: true</i>"]
+    SERVE["🤖 Serve via LLM Client<br/><i>Base Mistral + LoRA adapter</i><br/><i>PeftModel · cached</i>"]
+    HISTORY["📝 Log to History<br/><i>loop_history.jsonl</i>"]
+
+    T1 --> CHECK
+    T2 --> CHECK
+    CHECK -->|"enough feedback"| BUILD
+    CHECK -->|"not enough"| SKIP["⏭️ Skip<br/><i>wait for more feedback</i>"]
+    BUILD --> EXPORT --> TRAIN --> REGISTER --> SERVE
+    REGISTER --> HISTORY
+
+    style TRIGGER fill:#e0f2f1,stroke:#00695c,stroke-width:2px
+    style CHECK fill:#fff3e0,stroke:#ef6c00
+    style BUILD fill:#e3f2fd,stroke:#1565c0
+    style EXPORT fill:#e3f2fd,stroke:#1565c0
+    style TRAIN fill:#f3e5f5,stroke:#7b1fa2
+    style REGISTER fill:#fce4ec,stroke:#c62828
+    style SERVE fill:#e8f5e9,stroke:#2e7d32
+    style SKIP fill:#f5f5f5,stroke:#9e9e9e
+```
+
+### Evaluation Pipeline — RAGAS Quality Measurement
+
+```mermaid
+flowchart LR
+    subgraph INPUT["📥 Input"]
+        direction TB
+        I1["Single Q&A Pair<br/><i>POST /eval/single</i>"]
+        I2["Batch Samples<br/><i>POST /eval/batch</i>"]
+        I3["End-to-End Pipeline<br/><i>POST /eval/pipeline</i>"]
+        I4["Model Comparison<br/><i>POST /eval/compare</i>"]
+    end
+
+    subgraph PIPELINE["⚙️ Pipeline Evaluation"]
+        direction TB
+        P1["🔍 Retrieve<br/><i>query → top-K chunks</i>"]
+        P2["📋 Build Prompt<br/><i>context + question</i>"]
+        P3["🤖 LLM Inference<br/><i>generate answer</i>"]
+        P1 --> P2 --> P3
+    end
+
+    subgraph RAGAS["📈 RAGAS Scoring"]
+        direction TB
+        R1["🧪 Faithfulness<br/><i>grounded in context?</i>"]
+        R2["🎯 Answer Relevancy<br/><i>addresses question?</i>"]
+        R3["📐 Context Precision<br/><i>chunks relevant?</i>"]
+        R4["✅ Factual Correctness<br/><i>matches reference?</i><br/><i>(optional)</i>"]
+    end
+
+    subgraph OUTPUT["📊 Results"]
+        direction TB
+        O1["Per-Sample Scores"]
+        O2["Aggregate Means"]
+        O3["Model Comparison<br/><i>side-by-side table</i>"]
+        O4["History + Stats<br/><i>eval_results.jsonl</i>"]
+    end
+
+    I1 --> RAGAS
+    I2 --> RAGAS
+    I3 --> PIPELINE --> RAGAS
+    I4 -->|"same queries ×<br/>multiple models"| PIPELINE
+    RAGAS --> OUTPUT
+
+    style INPUT fill:#e3f2fd,stroke:#1565c0,stroke-width:2px
+    style PIPELINE fill:#fff3e0,stroke:#ef6c00,stroke-width:2px
+    style RAGAS fill:#ede7f6,stroke:#9c27b0,stroke-width:2px
+    style OUTPUT fill:#e8f5e9,stroke:#2e7d32,stroke-width:2px
 ```
 
 ---
