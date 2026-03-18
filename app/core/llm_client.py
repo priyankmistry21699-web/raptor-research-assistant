@@ -37,12 +37,12 @@ MODEL_REGISTRY = {
         "api_key": "ollama",
         "max_tokens": 1024,
         "temperature": 0.3,
-        "timeout": 180,
+        "timeout": 10,  # Reduced from 180 to fail faster and fallback
     },
     "groq-llama": {
         "model": "llama-3.3-70b-versatile",
         "api_url": "https://api.groq.com/openai/v1/chat/completions",
-        "api_key": os.getenv("GROQ_API_KEY", ""),
+        "api_key": os.getenv("LLM_API_KEY", ""),  # Use the configured API key
         "max_tokens": 1024,
         "temperature": 0.2,
         "timeout": 30,
@@ -236,10 +236,36 @@ def run_llm_messages(
 
     logger.info(f"LLM call: model={model}, url={api_url}, task={task}")
 
-    response = requests.post(api_url, headers=headers, json=payload, timeout=timeout)
-    response.raise_for_status()
-    data = response.json()
-    return data["choices"][0]["message"]["content"]
+    # Try the primary model first
+    try:
+        response = requests.post(api_url, headers=headers, json=payload, timeout=timeout)
+        response.raise_for_status()
+        data = response.json()
+        return data["choices"][0]["message"]["content"]
+    except Exception as e:
+        logger.warning(f"LLM call failed for {model}: {e}")
+        
+        # Fallback logic: if local model fails, try cloud model
+        if model in ["mistral", "mistral:latest"] and "localhost" in api_url:
+            logger.info("Falling back to Groq cloud model...")
+            fallback_config = MODEL_REGISTRY.get("groq-llama", {})
+            if fallback_config:
+                fallback_url = fallback_config["api_url"]
+                fallback_key = fallback_config["api_key"]
+                fallback_model = fallback_config["model"]
+                fallback_timeout = fallback_config.get("timeout", 30)
+                
+                headers["Authorization"] = f"Bearer {fallback_key}"
+                payload["model"] = fallback_model
+                
+                logger.info(f"LLM fallback call: model={fallback_model}, url={fallback_url}")
+                response = requests.post(fallback_url, headers=headers, json=payload, timeout=fallback_timeout)
+                response.raise_for_status()
+                data = response.json()
+                return data["choices"][0]["message"]["content"]
+        
+        # If no fallback or fallback also fails, re-raise the original error
+        raise e
 
 
 def list_available_models() -> Dict[str, Dict]:

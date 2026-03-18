@@ -4,6 +4,12 @@ RAPTOR Research Assistant - Main FastAPI Application
 Combines all API routers and provides the main application entry point.
 """
 
+import os
+import sys
+
+# Add project root to path
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 

@@ -59,7 +59,26 @@ def _retrieve_chunks(query: str, top_k: int = 5) -> List[Dict[str, Any]]:
     return chunks
 
 
-def _build_citations(chunks: List[Dict[str, Any]]) -> List[Dict[str, str]]:
+def _is_conversational_message(message: str) -> bool:
+    """Check if message is a simple conversational/greeting that doesn't need research context."""
+    message_lower = message.lower().strip()
+    
+    # Common greetings and conversational starters
+    conversational_patterns = [
+        "hello", "hi", "hey", "greetings", "good morning", "good afternoon", 
+        "good evening", "how are you", "what's up", "how can you help",
+        "can you help", "help me", "assist me", "what can you do",
+        "tell me about yourself", "who are you", "introduce yourself",
+        "thanks", "thank you", "bye", "goodbye", "see you", "farewell"
+    ]
+    
+    # Check for exact matches or short messages containing these words
+    if len(message.split()) <= 5:  # Short messages
+        for pattern in conversational_patterns:
+            if pattern in message_lower:
+                return True
+    
+    return False
     """Extract citation info from retrieved chunks."""
     citations = []
     seen = set()
@@ -131,11 +150,19 @@ def chat(req: ChatRequest):
     # 2. Store user message
     session.add_message(role="user", content=req.message)
 
-    # 3. Retrieve relevant chunks
-    chunks = _retrieve_chunks(req.message, req.top_k)
-
-    # 4. Build citations from retrieved chunks
-    citations = _build_citations(chunks)
+    # 3. Check if this is a conversational message
+    is_conversational = _is_conversational_message(req.message)
+    
+    if is_conversational:
+        # For conversational messages, skip retrieval and use simple prompt
+        chunks = []
+        citations = []
+        logger.info(f"Conversational message detected: '{req.message}' - skipping retrieval")
+    else:
+        # 3. Retrieve relevant chunks (for research questions)
+        chunks = _retrieve_chunks(req.message, req.top_k)
+        # 4. Build citations from retrieved chunks
+        citations = _build_citations(chunks)
 
     # 5. Get chat history for context (excluding the message we just added)
     chat_history = session.get_llm_history(max_turns=10)

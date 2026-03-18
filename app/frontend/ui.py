@@ -124,6 +124,23 @@ def _format_session_list() -> list:
     ]
 
 
+def _is_conversational(message: str) -> bool:
+    """Check if message is a simple greeting/conversational that doesn't need research context."""
+    msg = message.lower().strip()
+    patterns = [
+        "hello", "hi", "hey", "greetings", "good morning", "good afternoon",
+        "good evening", "how are you", "what's up", "how can you help",
+        "can you help", "help me", "assist me", "what can you do",
+        "tell me about yourself", "who are you", "introduce yourself",
+        "thanks", "thank you", "bye", "goodbye", "see you", "farewell",
+    ]
+    if len(message.split()) <= 5:
+        for p in patterns:
+            if p in msg:
+                return True
+    return False
+
+
 def chat_fn(message, chat_history, session_id, task, model, top_k):
     if not message.strip():
         return chat_history, "", session_id, "*Type a message to start chatting.*"
@@ -144,13 +161,18 @@ def chat_fn(message, chat_history, session_id, task, model, top_k):
     current_session_id = session.session_id
     session.add_message(role="user", content=message)
 
-    try:
-        chunks, citations = _retrieve_and_format(message, top_k=int(top_k))
-    except Exception as e:
-        logger.error("Retrieval error: %s", e)
-        chat_history.append({"role": "user", "content": message})
-        chat_history.append({"role": "assistant", "content": f"Error during retrieval: {e}"})
-        return chat_history, "", current_session_id, f"Retrieval error: {e}"
+    # Skip retrieval for conversational messages (greetings, etc.)
+    if _is_conversational(message):
+        chunks, citations = [], []
+        logger.info("Conversational message detected: '%s' — skipping retrieval", message)
+    else:
+        try:
+            chunks, citations = _retrieve_and_format(message, top_k=int(top_k))
+        except Exception as e:
+            logger.error("Retrieval error: %s", e)
+            chat_history.append({"role": "user", "content": message})
+            chat_history.append({"role": "assistant", "content": f"Error during retrieval: {e}"})
+            return chat_history, "", current_session_id, f"Retrieval error: {e}"
 
     llm_history = session.get_llm_history(max_turns=10)
     if llm_history and llm_history[-1]["role"] == "user":
@@ -985,11 +1007,6 @@ def show_paper_models_fn(arxiv_id: str):
 def create_ui() -> gr.Blocks:
     with gr.Blocks(
         title="RAPTOR Research Assistant",
-        theme=gr.themes.Soft(),
-        css="""
-        .citation-panel { max-height: 400px; overflow-y: auto; }
-        .paper-viewer { max-height: 600px; overflow-y: auto; }
-        """
     ) as demo:
         gr.Markdown(
             "# RAPTOR Research Assistant\n"
@@ -1007,7 +1024,7 @@ def create_ui() -> gr.Blocks:
             with gr.Row():
                 with gr.Column(scale=3):
                     chatbot = gr.Chatbot(
-                        label="Chat", height=500, type="messages", show_copy_button=True,
+                        label="Chat", height=500,
                     )
                     with gr.Row():
                         msg_input = gr.Textbox(
@@ -1305,4 +1322,13 @@ if __name__ == "__main__":
 
     logging.basicConfig(level=logging.INFO)
     demo = create_ui()
-    demo.launch(server_name="0.0.0.0", server_port=7860, share=False)
+    demo.launch(
+        theme=gr.themes.Soft(),
+        css="""
+        .citation-panel { max-height: 400px; overflow-y: auto; }
+        .paper-viewer { max-height: 600px; overflow-y: auto; }
+        """,
+        server_name="0.0.0.0",
+        server_port=7860,
+        share=False
+    )

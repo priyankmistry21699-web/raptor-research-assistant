@@ -120,16 +120,22 @@ def build_messages(
         [{'role': 'system', 'content': '...'}, {'role': 'user', 'content': '...'}]
     """
     system = SYSTEM_PROMPTS.get(task, SYSTEM_PROMPTS["qa"])
+    
+    # For conversational messages (no chunks), use conversational system prompt
+    if not chunks and task == "qa":
+        system = SYSTEM_PROMPTS["conversational"]
 
     # Build user message with context
-    context_blocks = []
-    for i, chunk in enumerate(chunks, 1):
-        context_blocks.append(format_context_block(chunk, i))
-    context_str = CONTEXT_HEADER + "\n" + "\n".join(context_blocks)
-
-    task_instruction = TASK_INSTRUCTIONS.get(task, TASK_INSTRUCTIONS["qa"])
-
-    user_content = f"{context_str}\n\nQuestion:\n{user_question}\n\nInstructions:\n{task_instruction}"
+    if chunks:
+        context_blocks = []
+        for i, chunk in enumerate(chunks, 1):
+            context_blocks.append(format_context_block(chunk, i))
+        context_str = CONTEXT_HEADER + "\n" + "\n".join(context_blocks)
+        task_instruction = TASK_INSTRUCTIONS.get(task, TASK_INSTRUCTIONS["qa"])
+        user_content = f"{context_str}\n\nQuestion:\n{user_question}\n\nInstructions:\n{task_instruction}"
+    else:
+        # For conversational messages without context
+        user_content = user_question
 
     messages = [{"role": "system", "content": system}]
 

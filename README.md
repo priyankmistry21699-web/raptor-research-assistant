@@ -591,33 +591,35 @@ Supports single evaluation, batch evaluation, end-to-end pipeline evaluation (qu
 
 Five-tab Gradio application on port 7860:
 
-| Tab           | Features                                                                                                                                                   |
-| ------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **Chat**      | Multi-turn Q&A, task/model selector, Top-K slider, session management, feedback buttons (helpful/incorrect/hallucination/correction), live citations panel |
-| **Papers**    | Browse all 204 papers, view RAPTOR tree hierarchy (topics → sections → chunks), paper metadata, section summaries                                          |
-| **Upload**    | Add papers via arXiv ID (auto-fetches PDF + metadata) or direct PDF upload. Full pipeline: extract → chunk → embed → ChromaDB → RAPTOR tree                |
-| **Paper Study** | ⭐ **NEW**: Paper-specific learning & debate — isolated queries, individual paper fine-tuning, model comparison, debate interfaces                      |
-| **Dashboard** | System stats (papers, chunks, topics, sections, summaries), session/feedback counts, active model, fine-tuned model list                                   |
+| Tab             | Features                                                                                                                                                   |
+| --------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Chat**        | Multi-turn Q&A, task/model selector, Top-K slider, session management, feedback buttons (helpful/incorrect/hallucination/correction), live citations panel |
+| **Papers**      | Browse all 204 papers, view RAPTOR tree hierarchy (topics → sections → chunks), paper metadata, section summaries                                          |
+| **Upload**      | Add papers via arXiv ID (auto-fetches PDF + metadata) or direct PDF upload. Full pipeline: extract → chunk → embed → ChromaDB → RAPTOR tree                |
+| **Paper Study** | ⭐ **NEW**: Paper-specific learning & debate — isolated queries, individual paper fine-tuning, model comparison, debate interfaces                         |
+| **Dashboard**   | System stats (papers, chunks, topics, sections, summaries), session/feedback counts, active model, fine-tuned model list                                   |
 
 ### 13. Paper-Specific Learning & Debate (Section 18)
 
 **NEW FEATURE**: Enables deep, isolated study of individual research papers with specialized learning capabilities:
 
-| Capability                  | Description                                                                 |
-| --------------------------- | --------------------------------------------------------------------------- |
-| **Isolated Queries**        | Ask questions about a specific paper only (no cross-paper contamination)    |
-| **Paper-Specific Fine-tuning** | Train specialized models for individual papers using synthetic Q&A pairs   |
-| **Model Management**        | Track and compare fine-tuned models for different papers                   |
-| **Debate Interfaces**       | Compare different approaches and models on the same paper content          |
-| **Context Preservation**    | Maintain paper-specific context throughout conversations                    |
+| Capability                     | Description                                                              |
+| ------------------------------ | ------------------------------------------------------------------------ |
+| **Isolated Queries**           | Ask questions about a specific paper only (no cross-paper contamination) |
+| **Paper-Specific Fine-tuning** | Train specialized models for individual papers using synthetic Q&A pairs |
+| **Model Management**           | Track and compare fine-tuned models for different papers                 |
+| **Debate Interfaces**          | Compare different approaches and models on the same paper content        |
+| **Context Preservation**       | Maintain paper-specific context throughout conversations                 |
 
 **How it works:**
+
 1. **Load a paper** by arXiv ID to see its structure and metadata
 2. **Ask isolated questions** that search only within that paper's content
 3. **Fine-tune specialized models** trained on synthetic Q&A pairs from the paper
 4. **Compare models** and debate different interpretations of the same content
 
 **API Endpoints:**
+
 - `POST /retrieve/paper-specific-query` — Isolated retrieval within one paper
 - `POST /train/paper/finetune` — Start paper-specific fine-tuning
 - `GET /train/paper/models/{arxiv_id}` — List models for a specific paper
@@ -659,55 +661,55 @@ python -m pytest tests/ --cov=app --cov-report=term-missing
 
 ## API Endpoints (50 routes)
 
-| Endpoint                    | Method | Description                                   |
-| --------------------------- | ------ | --------------------------------------------- |
-| `/`                         | GET    | API overview and route summary                |
-| `/health`                   | GET    | System health check (LLM, ChromaDB, trees)    |
-| `/status`                   | GET    | Full system status (papers, sessions, models) |
-| `/config`                   | GET    | Current configuration (keys redacted)         |
-| `/retrieve`                 | POST   | Hybrid vector + tree retrieval                |
-| `/retrieve/tree`            | POST   | Browse by topic/section                       |
-| `/retrieve/papers`          | GET    | List all 204 paper IDs                        |
-| `/retrieve/paper/{id}`      | GET    | Paper tree overview                           |
-| `/prompt`                   | POST   | Retrieve + build prompt                       |
-| `/llm`                      | POST   | Full pipeline: retrieve → prompt → LLM answer |
-| `/llm/models`               | GET    | List available models (incl. fine-tuned)      |
-| `/llm/health`               | GET    | Check if active LLM is responding             |
-| `/chat`                     | POST   | Session-aware chat (auto model selection)     |
-| `/chat/session`             | POST   | Create new session                            |
-| `/chat/session/{id}`        | GET    | Get session history                           |
-| `/chat/sessions`            | GET    | List all sessions                             |
-| `/chat/session/{id}`        | DELETE | Delete session                                |
-| `/feedback`                 | POST   | Submit feedback                               |
-| `/feedback`                 | GET    | Get all feedback                              |
-| `/feedback/stats`           | GET    | Feedback statistics                           |
-| `/feedback/session/{id}`    | GET    | Feedback for a session                        |
-| `/feedback/type/{type}`     | GET    | Filter by feedback type                       |
-| `/train/preferences/build`  | POST   | Build preference pairs from feedback          |
-| `/train/preferences`        | GET    | Get all preference pairs                      |
-| `/train/preferences/stats`  | GET    | Preference dataset statistics                 |
-| `/train/preferences/export` | GET    | Export DPO training pairs                     |
-| `/train/finetune`           | POST   | Start DPO fine-tuning run                     |
-| `/train/finetune/status`    | GET    | Check training progress                       |
-| `/train/finetune/models`    | GET    | List fine-tuned models                        |
-| `/train/finetune/register`  | POST   | Register fine-tuned model for inference       |
-| `/train/loop/trigger`       | POST   | Manually trigger learning loop cycle          |
-| `/train/loop/status`        | GET    | Learning loop state                           |
-| `/train/loop/auto`          | POST   | Enable/disable automatic loop                 |
-| `/train/loop/history`       | GET    | History of all loop runs                      |
-| `/train/loop/model`         | GET    | Currently selected best model                 |
-| `/train/loop/config`        | PUT    | Update loop configuration                     |
-| `/train/paper/finetune`     | POST   | Start paper-specific DPO fine-tuning          |
-| `/train/paper/models/{id}`  | GET    | List fine-tuned models for a specific paper   |
+| Endpoint                         | Method | Description                                   |
+| -------------------------------- | ------ | --------------------------------------------- |
+| `/`                              | GET    | API overview and route summary                |
+| `/health`                        | GET    | System health check (LLM, ChromaDB, trees)    |
+| `/status`                        | GET    | Full system status (papers, sessions, models) |
+| `/config`                        | GET    | Current configuration (keys redacted)         |
+| `/retrieve`                      | POST   | Hybrid vector + tree retrieval                |
+| `/retrieve/tree`                 | POST   | Browse by topic/section                       |
+| `/retrieve/papers`               | GET    | List all 204 paper IDs                        |
+| `/retrieve/paper/{id}`           | GET    | Paper tree overview                           |
+| `/prompt`                        | POST   | Retrieve + build prompt                       |
+| `/llm`                           | POST   | Full pipeline: retrieve → prompt → LLM answer |
+| `/llm/models`                    | GET    | List available models (incl. fine-tuned)      |
+| `/llm/health`                    | GET    | Check if active LLM is responding             |
+| `/chat`                          | POST   | Session-aware chat (auto model selection)     |
+| `/chat/session`                  | POST   | Create new session                            |
+| `/chat/session/{id}`             | GET    | Get session history                           |
+| `/chat/sessions`                 | GET    | List all sessions                             |
+| `/chat/session/{id}`             | DELETE | Delete session                                |
+| `/feedback`                      | POST   | Submit feedback                               |
+| `/feedback`                      | GET    | Get all feedback                              |
+| `/feedback/stats`                | GET    | Feedback statistics                           |
+| `/feedback/session/{id}`         | GET    | Feedback for a session                        |
+| `/feedback/type/{type}`          | GET    | Filter by feedback type                       |
+| `/train/preferences/build`       | POST   | Build preference pairs from feedback          |
+| `/train/preferences`             | GET    | Get all preference pairs                      |
+| `/train/preferences/stats`       | GET    | Preference dataset statistics                 |
+| `/train/preferences/export`      | GET    | Export DPO training pairs                     |
+| `/train/finetune`                | POST   | Start DPO fine-tuning run                     |
+| `/train/finetune/status`         | GET    | Check training progress                       |
+| `/train/finetune/models`         | GET    | List fine-tuned models                        |
+| `/train/finetune/register`       | POST   | Register fine-tuned model for inference       |
+| `/train/loop/trigger`            | POST   | Manually trigger learning loop cycle          |
+| `/train/loop/status`             | GET    | Learning loop state                           |
+| `/train/loop/auto`               | POST   | Enable/disable automatic loop                 |
+| `/train/loop/history`            | GET    | History of all loop runs                      |
+| `/train/loop/model`              | GET    | Currently selected best model                 |
+| `/train/loop/config`             | PUT    | Update loop configuration                     |
+| `/train/paper/finetune`          | POST   | Start paper-specific DPO fine-tuning          |
+| `/train/paper/models/{id}`       | GET    | List fine-tuned models for a specific paper   |
 | `/retrieve/paper-specific-query` | POST   | Isolated query within a single paper          |
-| `/retrieve/fine-tune-paper` | POST   | Initiate paper-specific fine-tuning           |
-| `/retrieve/paper-models/{id}` | GET    | Get available models for a paper              |
-| `/eval/single`              | POST   | Evaluate a single Q&A pair (RAGAS)            |
-| `/eval/batch`               | POST   | Evaluate a batch of Q&A samples               |
-| `/eval/pipeline`            | POST   | End-to-end RAG pipeline evaluation            |
-| `/eval/compare`             | POST   | Compare multiple models side-by-side          |
-| `/eval/history`             | GET    | Recent evaluation results                     |
-| `/eval/stats`               | GET    | Aggregate evaluation statistics               |
+| `/retrieve/fine-tune-paper`      | POST   | Initiate paper-specific fine-tuning           |
+| `/retrieve/paper-models/{id}`    | GET    | Get available models for a paper              |
+| `/eval/single`                   | POST   | Evaluate a single Q&A pair (RAGAS)            |
+| `/eval/batch`                    | POST   | Evaluate a batch of Q&A samples               |
+| `/eval/pipeline`                 | POST   | End-to-end RAG pipeline evaluation            |
+| `/eval/compare`                  | POST   | Compare multiple models side-by-side          |
+| `/eval/history`                  | GET    | Recent evaluation results                     |
+| `/eval/stats`                    | GET    | Aggregate evaluation statistics               |
 
 ---
 
@@ -735,7 +737,7 @@ pip install -r requirements.txt
 
 # Create .env file
 echo LLM_API_KEY=ollama > .env
-echo LLM_API_URL=http://localhost:11434/v1/chat/completions >> .env
+echo LLM_API_URL=http://localhost:11435/v1/chat/completions >> .env
 echo LLM_MODEL=mistral:latest >> .env
 ```
 
