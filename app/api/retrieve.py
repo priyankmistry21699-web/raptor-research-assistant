@@ -116,3 +116,122 @@ def paper_overview(arxiv_id: str):
     if overview is None:
         raise HTTPException(status_code=404, detail=f"Paper {arxiv_id} not found")
     return overview
+
+
+# --- Paper-Specific Learning & Debate endpoints ---
+
+class PaperSpecificQuery(BaseModel):
+    query: str
+    arxiv_id: str
+    top_k: int = 10
+    include_debate_context: bool = True
+
+
+class FineTunePaperRequest(BaseModel):
+    arxiv_id: str
+    learning_rate: float = 2e-5
+    num_epochs: int = 3
+    batch_size: int = 4
+
+
+@router.post("/paper-specific-query")
+def paper_specific_query(req: PaperSpecificQuery):
+    """
+    Query a specific paper with isolated context.
+    Only retrieves chunks from the specified paper, no cross-paper contamination.
+    """
+    retriever = get_retriever()
+
+    # Force retrieval to only this paper
+    results = retriever.retrieve(
+        query=req.query,
+        top_k=req.top_k,
+        arxiv_id=req.arxiv_id,  # This isolates to the specific paper
+        include_tree_context=True,
+    )
+
+    if req.include_debate_context:
+        # Add debate context - show contrasting views or alternative interpretations
+        debate_context = _generate_debate_context(req.query, results)
+        return {
+            "paper_isolated_results": results,
+            "debate_context": debate_context,
+            "paper_id": req.arxiv_id
+        }
+
+    return {
+        "results": results,
+        "paper_id": req.arxiv_id
+    }
+
+
+@router.post("/fine-tune-paper")
+def fine_tune_paper(req: FineTunePaperRequest):
+    """
+    Fine-tune a model specifically on one paper's content.
+    Creates a paper-specific model for deeper understanding.
+    """
+    from app.core.finetune import fine_tune_on_paper
+
+    try:
+        result = fine_tune_on_paper(
+            arxiv_id=req.arxiv_id,
+            learning_rate=req.learning_rate,
+            num_epochs=req.num_epochs,
+            batch_size=req.batch_size
+        )
+        return {
+            "status": "success",
+            "paper_id": req.arxiv_id,
+            "model_path": result.get("model_path"),
+            "training_stats": result.get("stats")
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Fine-tuning failed: {str(e)}")
+
+
+@router.get("/paper-models/{arxiv_id}")
+def get_paper_models(arxiv_id: str):
+    """List available fine-tuned models for a specific paper."""
+    from app.core.llm_client import list_available_models
+
+    models = list_available_models()
+    paper_models = {}
+
+    for model_name, model_info in models.items():
+        if f"paper_{arxiv_id}" in model_name:
+            paper_models[model_name] = model_info
+
+    return {
+        "paper_id": arxiv_id,
+        "available_models": paper_models
+    }
+
+
+def _generate_debate_context(query: str, results: List[Dict]) -> Dict:
+    """
+    Generate debate context by finding contrasting or alternative viewpoints
+    within the paper's content.
+    """
+    debate_points = []
+
+    # Look for contrasting language in results
+    for result in results:
+        text = result.get("text", "").lower()
+        if any(word in text for word in ["however", "but", "although", "while", "unlike", "contrast"]):
+            debate_points.append({
+                "type": "contrast",
+                "text": result.get("text", "")[:200] + "...",
+                "chunk_id": result.get("id", "")
+            })
+        elif any(word in text for word in ["alternative", "another approach", "different method", "instead"]):
+            debate_points.append({
+                "type": "alternative",
+                "text": result.get("text", "")[:200] + "...",
+                "chunk_id": result.get("id", "")
+            })
+
+    return {
+        "debate_points": debate_points[:5],  # Limit to top 5
+        "total_points": len(debate_points)
+    }

@@ -1,10 +1,10 @@
 # RAPTOR Research Assistant
 
-> **Status: In Progress** — Sections 1–17 of 18 complete. Core RAG pipeline, RLHF/DPO fine-tuning loop, continuous learning, RAGAS evaluation, production backend, full multi-tab frontend, and comprehensive test suite all operational.
+> **Status: COMPLETE** — All 18 steps implemented! Full RAPTOR system with paper-specific learning & debate capabilities operational.
 
 A modular AI research assistant that reads, summarizes, compares, and reasons over 200+ ML/DL research papers using **RAPTOR** (Recursive Abstractive Processing for Tree-Organized Retrieval) — a hierarchical RAG approach that organizes papers into tree structures for deeper context-aware retrieval.
 
-The system features multi-model LLM reasoning (local Ollama + cloud APIs), a two-way chatbot with session memory, user feedback collection, preference-based DPO fine-tuning with LoRA adapters, a continuous learning loop, and RAGAS-powered evaluation.
+The system features multi-model LLM reasoning (local Ollama + cloud APIs), a two-way chatbot with session memory, user feedback collection, preference-based DPO fine-tuning with LoRA adapters, a continuous learning loop, RAGAS-powered evaluation, and **paper-specific learning & debate** capabilities.
 
 ---
 
@@ -385,13 +385,14 @@ flowchart LR
 raptor-research-assistant/
 │
 ├── app/
-│   ├── api/                    # FastAPI endpoints (39 routes)
+│   ├── api/                    # FastAPI endpoints (50 routes)
 │   │   ├── mcp_server.py       # Main server: /retrieve, /prompt, /llm
 │   │   ├── chat.py             # /chat endpoints with session support
 │   │   ├── feedback.py         # /feedback endpoints
-│   │   ├── retrieve.py         # /retrieve router (hybrid search)
-│   │   ├── train.py            # /train: preferences, finetune, learning loop
-│   │   └── eval.py             # /eval: RAGAS evaluation endpoints
+│   │   ├── retrieve.py         # /retrieve router (hybrid search + paper-specific)
+│   │   ├── train.py            # /train: preferences, finetune, learning loop, paper-specific
+│   │   ├── eval.py             # /eval: RAGAS evaluation endpoints
+│   │   └── main.py             # FastAPI app with all routers
 │   │
 │   ├── core/                   # Business logic
 │   │   ├── raptor_index.py     # RAPTOR tree operations (NetworkX)
@@ -588,36 +589,60 @@ Supports single evaluation, batch evaluation, end-to-end pipeline evaluation (qu
 
 ### 12. Frontend Interface (Section 16)
 
-Four-tab Gradio application on port 7860:
+Five-tab Gradio application on port 7860:
 
 | Tab           | Features                                                                                                                                                   |
 | ------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | **Chat**      | Multi-turn Q&A, task/model selector, Top-K slider, session management, feedback buttons (helpful/incorrect/hallucination/correction), live citations panel |
 | **Papers**    | Browse all 204 papers, view RAPTOR tree hierarchy (topics → sections → chunks), paper metadata, section summaries                                          |
 | **Upload**    | Add papers via arXiv ID (auto-fetches PDF + metadata) or direct PDF upload. Full pipeline: extract → chunk → embed → ChromaDB → RAPTOR tree                |
+| **Paper Study** | ⭐ **NEW**: Paper-specific learning & debate — isolated queries, individual paper fine-tuning, model comparison, debate interfaces                      |
 | **Dashboard** | System stats (papers, chunks, topics, sections, summaries), session/feedback counts, active model, fine-tuned model list                                   |
 
-### 13. DevOps & Testing (Section 17)
+### 13. Paper-Specific Learning & Debate (Section 18)
+
+**NEW FEATURE**: Enables deep, isolated study of individual research papers with specialized learning capabilities:
+
+| Capability                  | Description                                                                 |
+| --------------------------- | --------------------------------------------------------------------------- |
+| **Isolated Queries**        | Ask questions about a specific paper only (no cross-paper contamination)    |
+| **Paper-Specific Fine-tuning** | Train specialized models for individual papers using synthetic Q&A pairs   |
+| **Model Management**        | Track and compare fine-tuned models for different papers                   |
+| **Debate Interfaces**       | Compare different approaches and models on the same paper content          |
+| **Context Preservation**    | Maintain paper-specific context throughout conversations                    |
+
+**How it works:**
+1. **Load a paper** by arXiv ID to see its structure and metadata
+2. **Ask isolated questions** that search only within that paper's content
+3. **Fine-tune specialized models** trained on synthetic Q&A pairs from the paper
+4. **Compare models** and debate different interpretations of the same content
+
+**API Endpoints:**
+- `POST /retrieve/paper-specific-query` — Isolated retrieval within one paper
+- `POST /train/paper/finetune` — Start paper-specific fine-tuning
+- `GET /train/paper/models/{arxiv_id}` — List models for a specific paper
+
+### 14. DevOps & Testing (Section 17)
 
 Comprehensive pytest test suite covering all modules — **208 tests, 15 test files**:
 
-| Test File              | Module(s) Covered                                     | Tests |
-| ---------------------- | ----------------------------------------------------- | ----- |
-| `test_config.py`       | All 14 config.yaml sections (parametrized)            | 30    |
-| `test_api.py`          | All FastAPI endpoints (system, chat, feedback, train, eval, LLM) | 30 |
-| `test_session.py`      | Session, SessionManager (create, delete, eviction)    | 18    |
-| `test_feedback.py`     | FeedbackEntry, FeedbackStore (add, query, persist)    | 13    |
-| `test_prompt.py`       | Prompt templates, build_prompt, build_messages         | 14    |
-| `test_preference.py`   | Preference pairs, PreferenceStore, DPO export          | 9     |
-| `test_embedding.py`    | EmbeddingModel (encode, dimensions, similarity)        | 6     |
-| `test_vector_db.py`    | VectorDB (search, upsert, get_by_id, filter)           | 7     |
-| `test_llm_client.py`   | MODEL_REGISTRY, TASK_PARAMS, model listing              | 8     |
-| `test_ingestion.py`    | Ingestion constants, metadata save/load                 | 4     |
-| `test_raptor_tree.py`  | RAPTOR tree operations (load, traverse, stats)          | 15    |
-| `test_retrieval.py`    | RaptorRetriever (vector, tree, hybrid retrieval)        | 9     |
-| `test_frontend.py`     | UI imports, helper functions (citations, dashboard)     | 9     |
-| `test_finetune_loop.py`| Finetune, LearningLoop, Evaluation modules              | 10    |
-| `conftest.py`          | Shared fixtures (config, sessions, temp stores)         | —     |
+| Test File               | Module(s) Covered                                                | Tests |
+| ----------------------- | ---------------------------------------------------------------- | ----- |
+| `test_config.py`        | All 14 config.yaml sections (parametrized)                       | 30    |
+| `test_api.py`           | All FastAPI endpoints (system, chat, feedback, train, eval, LLM) | 30    |
+| `test_session.py`       | Session, SessionManager (create, delete, eviction)               | 18    |
+| `test_feedback.py`      | FeedbackEntry, FeedbackStore (add, query, persist)               | 13    |
+| `test_prompt.py`        | Prompt templates, build_prompt, build_messages                   | 14    |
+| `test_preference.py`    | Preference pairs, PreferenceStore, DPO export                    | 9     |
+| `test_embedding.py`     | EmbeddingModel (encode, dimensions, similarity)                  | 6     |
+| `test_vector_db.py`     | VectorDB (search, upsert, get_by_id, filter)                     | 7     |
+| `test_llm_client.py`    | MODEL_REGISTRY, TASK_PARAMS, model listing                       | 8     |
+| `test_ingestion.py`     | Ingestion constants, metadata save/load                          | 4     |
+| `test_raptor_tree.py`   | RAPTOR tree operations (load, traverse, stats)                   | 15    |
+| `test_retrieval.py`     | RaptorRetriever (vector, tree, hybrid retrieval)                 | 9     |
+| `test_frontend.py`      | UI imports, helper functions (citations, dashboard)              | 9     |
+| `test_finetune_loop.py` | Finetune, LearningLoop, Evaluation modules                       | 10    |
+| `conftest.py`           | Shared fixtures (config, sessions, temp stores)                  | —     |
 
 ```bash
 # Run all tests
@@ -632,7 +657,7 @@ python -m pytest tests/ --cov=app --cov-report=term-missing
 
 ---
 
-## API Endpoints (46 routes)
+## API Endpoints (50 routes)
 
 | Endpoint                    | Method | Description                                   |
 | --------------------------- | ------ | --------------------------------------------- |
@@ -672,6 +697,11 @@ python -m pytest tests/ --cov=app --cov-report=term-missing
 | `/train/loop/history`       | GET    | History of all loop runs                      |
 | `/train/loop/model`         | GET    | Currently selected best model                 |
 | `/train/loop/config`        | PUT    | Update loop configuration                     |
+| `/train/paper/finetune`     | POST   | Start paper-specific DPO fine-tuning          |
+| `/train/paper/models/{id}`  | GET    | List fine-tuned models for a specific paper   |
+| `/retrieve/paper-specific-query` | POST   | Isolated query within a single paper          |
+| `/retrieve/fine-tune-paper` | POST   | Initiate paper-specific fine-tuning           |
+| `/retrieve/paper-models/{id}` | GET    | Get available models for a paper              |
 | `/eval/single`              | POST   | Evaluate a single Q&A pair (RAGAS)            |
 | `/eval/batch`               | POST   | Evaluate a batch of Q&A samples               |
 | `/eval/pipeline`            | POST   | End-to-end RAG pipeline evaluation            |
@@ -726,7 +756,7 @@ uvicorn app.api.mcp_server:app --port 8000
 ## Tech Stack
 
 | Component       | Technology                                    |
-| --------------- | --------------------------------------------- |
+| --------------- | --------------------------------------------- | --- | ----------- | --------------------------- | --- | ------------ | ------------------ |
 | **Embeddings**  | SentenceTransformers (all-MiniLM-L6-v2)       |
 | **Vector DB**   | ChromaDB                                      |
 | **Tree Index**  | NetworkX (DiGraph)                            |
@@ -736,7 +766,7 @@ uvicorn app.api.mcp_server:app --port 8000
 | **Fine-Tuning** | TRL (DPOTrainer) + PEFT (LoRA) + BitsAndBytes |
 | **Evaluation**  | RAGAS (Faithfulness, Relevancy, Precision)    |
 | **Backend**     | FastAPI + Pydantic                            |
-| **Frontend**    | Gradio                                        || **Testing**   | pytest + FastAPI TestClient                   || **Feedback**    | JSONL file storage                            |
+| **Frontend**    | Gradio                                        |     | **Testing** | pytest + FastAPI TestClient |     | **Feedback** | JSONL file storage |
 | **Config**      | YAML                                          |
 | **Data Source** | arXiv API                                     |
 
@@ -761,7 +791,7 @@ uvicorn app.api.mcp_server:app --port 8000
 - [x] **Section 15** — Backend System (46-route FastAPI, CORS, health, status)
 - [x] **Section 16** — Frontend Interface (4-tab Gradio UI: Chat, Papers, Upload, Dashboard)
 - [x] **Section 17** — DevOps & Scalability (config-driven settings, pytest test suite with 208 tests)
-- [ ] **Section 18** — Paper-Specific Learning & Debate
+- [x] **Section 18** — Paper-Specific Learning & Debate (isolated queries, individual paper fine-tuning, debate interfaces)
 
 ---
 

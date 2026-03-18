@@ -361,3 +361,242 @@ def register_finetuned_model(run_name: str, alias: Optional[str] = None) -> Dict
         "base_model": config.get("base_model"),
         "adapter_path": model_dir,
     }
+
+
+# --- Paper-Specific Learning & Debate Functions ---
+
+def fine_tune_on_paper(
+    arxiv_id: str,
+    learning_rate: float = 2e-5,
+    num_epochs: int = 3,
+    batch_size: int = 4,
+    base_model: str = DEFAULT_BASE_MODEL,
+) -> Dict[str, Any]:
+    """
+    Fine-tune a model specifically on one paper's content for paper-specific learning.
+
+    This creates a specialized model that deeply understands a single paper,
+    enabling more accurate Q&A and debate capabilities for that specific paper.
+
+    Args:
+        arxiv_id: The arXiv ID of the paper to fine-tune on
+        learning_rate: Learning rate for fine-tuning
+        num_epochs: Number of training epochs
+        batch_size: Training batch size
+        base_model: Base model to fine-tune
+
+    Returns:
+        Dict with training results and model path
+    """
+    from app.core.raptor_index import load_tree, get_chunks
+    from app.core.prompt_builder import build_messages
+
+    # Check if paper exists
+    G = load_tree(arxiv_id)
+    if G is None:
+        return {
+            "status": "error",
+            "error": f"Paper {arxiv_id} not found in RAPTOR trees"
+        }
+
+    # Extract all chunks from the paper
+    all_chunks = get_chunks(G, None)  # Get all chunks in the tree
+    if not all_chunks:
+        return {
+            "status": "error",
+            "error": f"No chunks found for paper {arxiv_id}"
+        }
+
+    # Create synthetic Q&A pairs from the paper content
+    qa_pairs = _generate_paper_qa_pairs(arxiv_id, all_chunks)
+
+    if len(qa_pairs) < 2:
+        return {
+            "status": "error",
+            "error": f"Could not generate enough Q&A pairs from paper {arxiv_id} (got {len(qa_pairs)})"
+        }
+
+    # Convert to preference pairs format for DPO
+    preference_pairs = []
+    for qa in qa_pairs:
+        # Create chosen/rejected pairs
+        # For simplicity, we'll use the actual answer as "chosen"
+        # and a slightly modified version as "rejected"
+        preference_pairs.append({
+            "prompt": qa["question"],
+            "chosen": qa["answer"],
+            "rejected": _generate_rejected_answer(qa["answer"])
+        })
+
+    # Run DPO training with paper-specific name
+    run_name = f"paper_{arxiv_id}_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
+
+    result = run_dpo_training(
+        preference_pairs=preference_pairs,
+        base_model=base_model,
+        run_name=run_name,
+        num_epochs=num_epochs,
+        batch_size=batch_size,
+        learning_rate=learning_rate,
+        max_length=1024,  # Shorter for paper-specific content
+        max_prompt_length=512,
+    )
+
+    if result.get("status") == "success":
+        # Register the paper-specific model
+        register_result = register_finetuned_model(run_name, alias=f"paper_{arxiv_id}")
+        result["model_registration"] = register_result
+
+    return result
+
+
+def _generate_paper_qa_pairs(arxiv_id: str, chunks: List[Dict]) -> List[Dict[str, str]]:
+    """
+    Generate synthetic Q&A pairs from paper chunks for fine-tuning.
+    """
+    qa_pairs = []
+
+    # Group chunks by content similarity to create coherent Q&A pairs
+    for i, chunk in enumerate(chunks):
+        text = chunk.get("text", "").strip()
+        if len(text) < 50:  # Skip very short chunks
+            continue
+
+        # Generate question from chunk content
+        question = _generate_question_from_text(text)
+
+        # Use the chunk as the answer
+        answer = text
+
+        qa_pairs.append({
+            "question": question,
+            "answer": answer,
+            "chunk_index": chunk.get("chunk_index", i)
+        })
+
+    return qa_pairs
+
+
+def _generate_question_from_text(text: str) -> str:
+    """
+    Generate a question from text content.
+    """
+    # Simple heuristic-based question generation
+    text_lower = text.lower()
+
+    # Look for key patterns to create questions
+    if "method" in text_lower or "approach" in text_lower:
+        return "What method or approach is described in this section?"
+    elif "result" in text_lower or "finding" in text_lower:
+        return "What are the key results or findings presented here?"
+    elif "model" in text_lower or "architecture" in text_lower:
+        return "What model or architecture is being discussed?"
+    elif "experiment" in text_lower or "evaluation" in text_lower:
+        return "What experiments or evaluations are described?"
+    elif "conclusion" in text_lower or "summary" in text_lower:
+        return "What are the main conclusions or summary points?"
+    else:
+        # Default question
+        return "What is the main content discussed in this section?"
+
+
+def get_paper_specific_models(arxiv_id: str = None) -> List[Dict[str, Any]]:
+    """
+    Get all fine-tuned models available for a specific paper or all paper-specific models.
+
+    Args:
+        arxiv_id: Specific paper ID to filter by, or None for all paper-specific models
+
+    Returns:
+        List of model configurations
+    """
+    try:
+        models_dir = Path("models")
+        if not models_dir.exists():
+            return []
+
+        paper_models = []
+
+        # Look through all model directories
+        for model_dir in models_dir.iterdir():
+            if model_dir.is_dir() and model_dir.name.startswith("paper_"):
+                # Check if this model belongs to the requested paper
+                if arxiv_id and f"paper_{arxiv_id}" not in model_dir.name:
+                    continue
+
+                # Try to read model config
+                config_file = model_dir / "config.json"
+                if config_file.exists():
+                    try:
+                        with open(config_file, 'r') as f:
+                            config = json.load(f)
+
+                        # Extract paper ID from model name
+                        model_name = model_dir.name
+                        paper_id = model_name.split("_")[1] if "_" in model_name else "unknown"
+
+                        paper_models.append({
+                            "run_name": model_name,
+                            "arxiv_id": paper_id,
+                            "base_model": config.get("base_model", "unknown"),
+                            "created_at": config.get("created_at", "unknown"),
+                            "config": config
+                        })
+                    except Exception:
+                        # Skip invalid config files
+                        continue
+
+        return paper_models
+
+    except Exception as e:
+        print(f"Error getting paper-specific models: {e}")
+        return []
+
+
+def _generate_rejected_answer(chosen_answer: str) -> str:
+    """
+    Generate a rejected answer for DPO training by slightly modifying the chosen answer.
+    """
+    # Simple rejection generation - in practice, this could be more sophisticated
+    # For now, we'll create a slightly different version
+    words = chosen_answer.split()
+    if len(words) > 10:
+        # Remove some words and add generic text
+        modified = " ".join(words[:len(words)//2]) + " and other related concepts are discussed."
+    else:
+        modified = "This section discusses various technical concepts and approaches."
+
+    return modified
+
+
+def _generate_rejected_answer(chosen_answer: str) -> str:
+    """
+    Generate a slightly incorrect "rejected" answer for DPO training.
+    """
+    # Simple rejection generation - truncate or slightly modify
+    if len(chosen_answer) > 100:
+        return chosen_answer[:len(chosen_answer)//2] + "..."
+    else:
+        return chosen_answer.replace("the", "a", 1) if "the" in chosen_answer else chosen_answer + " (incomplete)"
+
+
+def get_paper_specific_models() -> Dict[str, List[str]]:
+    """
+    Get all available paper-specific fine-tuned models grouped by paper.
+    """
+    from app.core.llm_client import list_available_models
+
+    models = list_available_models()
+    paper_models = {}
+
+    for model_name, model_info in models.items():
+        if model_name.startswith("paper_"):
+            # Extract arxiv_id from model name (format: paper_ARXIVID_TIMESTAMP)
+            parts = model_name.split("_")
+            if len(parts) >= 2:
+                arxiv_id = parts[1]
+                if arxiv_id not in paper_models:
+                    paper_models[arxiv_id] = []
+                paper_models[arxiv_id].append(model_name)
+
+    return paper_models

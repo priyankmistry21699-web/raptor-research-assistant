@@ -234,6 +234,105 @@ def register_model(req: RegisterRequest):
 
 
 # =============================================
+# Paper-Specific Training endpoints (Step 18)
+# =============================================
+
+class PaperFinetuneRequest(BaseModel):
+    arxiv_id: str
+    base_model: str = DEFAULT_BASE_MODEL
+    run_name: Optional[str] = None
+    num_epochs: int = 1
+    batch_size: int = 2
+    learning_rate: float = 5e-5
+    lora_r: int = 16
+    lora_alpha: int = 32
+    lora_dropout: float = 0.05
+    max_length: int = 512
+    max_prompt_length: int = 256
+    beta: float = 0.1
+    gradient_accumulation_steps: int = 4
+
+class PaperFinetuneResponse(BaseModel):
+    status: str
+    run_name: Optional[str] = None
+    arxiv_id: str
+    message: str
+
+
+def _run_paper_training_background(arxiv_id, request):
+    """Background worker for paper-specific DPO training."""
+    from app.core.finetune import fine_tune_on_paper
+    fine_tune_on_paper(
+        arxiv_id=arxiv_id,
+        base_model=request.base_model,
+        run_name=request.run_name,
+        num_epochs=request.num_epochs,
+        batch_size=request.batch_size,
+        learning_rate=request.learning_rate,
+        lora_r=request.lora_r,
+        lora_alpha=request.lora_alpha,
+        lora_dropout=request.lora_dropout,
+        max_length=request.max_length,
+        max_prompt_length=request.max_prompt_length,
+        beta=request.beta,
+        gradient_accumulation_steps=request.gradient_accumulation_steps,
+    )
+
+
+@router.post("/paper/finetune", response_model=PaperFinetuneResponse)
+def start_paper_finetune(req: PaperFinetuneRequest, background_tasks: BackgroundTasks):
+    """
+    Start paper-specific DPO fine-tuning for a single paper.
+
+    Generates Q&A pairs from the paper's content and fine-tunes a model
+    specialized for that paper. Training runs in the background.
+
+    Check progress with GET /train/finetune/status.
+    """
+    # Check if training is already running
+    status = get_training_status()
+    if status["running"]:
+        raise HTTPException(
+            status_code=409,
+            detail=f"Training already in progress: {status['run_name']}"
+        )
+
+    # Validate paper exists
+    from app.core.raptor_index import list_all_papers
+    papers = list_all_papers()
+    if req.arxiv_id not in papers:
+        raise HTTPException(
+            status_code=404,
+            detail=f"Paper {req.arxiv_id} not found in system"
+        )
+
+    # Launch training in background
+    background_tasks.add_task(_run_paper_training_background, req.arxiv_id, req)
+
+    return PaperFinetuneResponse(
+        status="started",
+        run_name=req.run_name,
+        arxiv_id=req.arxiv_id,
+        message=f"Paper-specific training started for {req.arxiv_id}. "
+                f"Base model: {req.base_model}. Check /train/finetune/status for progress.",
+    )
+
+
+@router.get("/paper/models/{arxiv_id}")
+def get_paper_models(arxiv_id: str):
+    """
+    Get all fine-tuned models available for a specific paper.
+
+    Returns list of model configs that were trained on this paper.
+    """
+    from app.core.finetune import get_paper_specific_models
+    models = get_paper_specific_models(arxiv_id)
+    if not models:
+        return {"arxiv_id": arxiv_id, "models": [], "message": "No paper-specific models found"}
+    return {"arxiv_id": arxiv_id, "models": models}
+
+
+# =============================================
 # Continuous Learning Loop endpoints (Section 13)
 # =============================================
 

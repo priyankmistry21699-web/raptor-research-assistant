@@ -818,6 +818,167 @@ def dashboard_fn():
 
 
 # ============================================================
+#  Tab 4: Paper Study — helpers (Step 18)
+# ============================================================
+
+def load_study_paper_fn(arxiv_id: str):
+    """Load paper details for study."""
+    arxiv_id = arxiv_id.strip()
+    if not arxiv_id:
+        return "*Please enter an arXiv ID.*"
+
+    # Check if paper exists
+    papers = list_all_papers()
+    if arxiv_id not in papers:
+        return f"*Paper `{arxiv_id}` not found in the system.*"
+
+    # Load paper metadata
+    try:
+        meta_path = os.path.join(BASE_DIR, 'data', 'raw', 'papers_metadata_with_id.json')
+        if os.path.exists(meta_path):
+            with open(meta_path, 'r', encoding='utf-8') as f:
+                metadata = json.load(f)
+                paper_meta = next((p for p in metadata if p.get("arxiv_id") == arxiv_id), None)
+        else:
+            paper_meta = None
+    except Exception:
+        paper_meta = None
+
+    # Load tree structure
+    G = load_tree(arxiv_id)
+    if G is None:
+        return f"*Paper `{arxiv_id}` found but tree structure missing.*"
+
+    # Build info display
+    lines = [f"### {arxiv_id}"]
+    if paper_meta:
+        lines.append(f"**Title:** {paper_meta.get('title', 'Unknown')}")
+        lines.append(f"**Authors:** {', '.join(paper_meta.get('authors', []))}")
+        lines.append(f"**Abstract:** {paper_meta.get('abstract', '')[:300]}...")
+        lines.append(f"**Category:** {paper_meta.get('category', 'Unknown')}")
+        lines.append(f"**Published:** {paper_meta.get('published_date', 'Unknown')}")
+
+    # Tree stats
+    topics = [n for n in G.successors("root") if G.nodes[n].get("type") == "topic"]
+    sections = [n for n in G.nodes if G.nodes[n].get("type") == "section"]
+    chunks = [n for n in G.nodes if G.nodes[n].get("type") == "chunk"]
+
+    lines.append("")
+    lines.append("**Structure:**")
+    lines.append(f"- {len(topics)} topics")
+    lines.append(f"- {len(sections)} sections")
+    lines.append(f"- {len(chunks)} chunks")
+
+    return "\n".join(lines)
+
+
+def study_query_fn(arxiv_id: str, query: str, task: str, model: str, isolate: bool):
+    """Ask a question about a specific paper."""
+    arxiv_id = arxiv_id.strip()
+    query = query.strip()
+
+    if not arxiv_id:
+        return "*Please load a paper first.*"
+    if not query:
+        return "*Please enter a question.*"
+
+    # Check paper exists
+    papers = list_all_papers()
+    if arxiv_id not in papers:
+        return f"*Paper `{arxiv_id}` not found.*"
+
+    try:
+        # Import here to avoid circular imports
+        from app.api.retrieve import paper_specific_query
+        import requests
+
+        # Call the API endpoint
+        response = requests.post(
+            "http://localhost:8000/retrieve/paper-specific-query",
+            json={
+                "arxiv_id": arxiv_id,
+                "query": query,
+                "task": task,
+                "model": model,
+                "isolate_to_paper": isolate
+            }
+        )
+
+        if response.status_code == 200:
+            result = response.json()
+            return result.get("answer", "*No answer received.*")
+        else:
+            return f"*Error: {response.status_code} - {response.text}*"
+
+    except Exception as e:
+        return f"*Error querying paper: {str(e)}*"
+
+
+def start_paper_finetune_fn(arxiv_id: str):
+    """Start fine-tuning on a specific paper."""
+    arxiv_id = arxiv_id.strip()
+    if not arxiv_id:
+        return "*Please load a paper first.*"
+
+    # Check paper exists
+    papers = list_all_papers()
+    if arxiv_id not in papers:
+        return f"*Paper `{arxiv_id}` not found.*"
+
+    try:
+        import requests
+
+        # Call the training API
+        response = requests.post(
+            "http://localhost:8000/train/paper/finetune",
+            json={"arxiv_id": arxiv_id}
+        )
+
+        if response.status_code == 200:
+            result = response.json()
+            return f"✅ **Fine-tuning started!**\n\n{result.get('message', '')}"
+        else:
+            return f"*Error starting fine-tuning: {response.status_code} - {response.text}*"
+
+    except Exception as e:
+        return f"*Error: {str(e)}*"
+
+
+def show_paper_models_fn(arxiv_id: str):
+    """Show available models for a specific paper."""
+    arxiv_id = arxiv_id.strip()
+    if not arxiv_id:
+        return "*Please load a paper first.*"
+
+    try:
+        import requests
+
+        # Call the API to get paper models
+        response = requests.get(f"http://localhost:8000/train/paper/models/{arxiv_id}")
+
+        if response.status_code == 200:
+            result = response.json()
+            models = result.get("models", [])
+
+            if not models:
+                return f"*No paper-specific models found for `{arxiv_id}`.*"
+
+            lines = [f"### Models for {arxiv_id}"]
+            for model in models:
+                lines.append(f"- **{model.get('run_name', 'Unknown')}**")
+                lines.append(f"  - Base: {model.get('base_model', 'Unknown')}")
+                lines.append(f"  - Created: {model.get('created_at', 'Unknown')}")
+                lines.append("")
+
+            return "\n".join(lines)
+        else:
+            return f"*Error: {response.status_code} - {response.text}*"
+
+    except Exception as e:
+        return f"*Error: {str(e)}*"
+
+
+# ============================================================
 #  Build full Gradio Interface
 # ============================================================
 
@@ -1036,7 +1197,94 @@ def create_ui() -> gr.Blocks:
             )
 
         # ========================================
-        #  Tab 4: Dashboard
+        #  Tab 4: Paper Study (Step 18)
+        # ========================================
+        with gr.Tab("Paper Study"):
+            gr.Markdown(
+                "### Paper-Specific Learning & Debate\n"
+                "Study individual papers in isolation, fine-tune models on specific papers, "
+                "and test different approaches through debate.\n\n"
+                "**Features:** Paper-isolated queries, individual paper fine-tuning, "
+                "model comparison, and debate interfaces."
+            )
+
+            with gr.Row():
+                with gr.Column(scale=1):
+                    gr.Markdown("#### Paper Selection")
+                    study_paper_input = gr.Textbox(
+                        placeholder="e.g. 1706.03762",
+                        label="arXiv ID", lines=1,
+                    )
+                    load_paper_btn = gr.Button("Load Paper", variant="primary")
+
+                    gr.Markdown("#### Query Settings")
+                    study_task_dropdown = gr.Dropdown(
+                        choices=["Q&A", "Summarize", "Explain", "Compare"],
+                        value="Q&A", label="Task Type",
+                    )
+                    study_model_dropdown = gr.Dropdown(
+                        choices=["Auto (Best Available)", "Mistral (Local)", "Groq Llama 3.3 (Cloud)"],
+                        value="Auto (Best Available)", label="Model",
+                    )
+                    isolate_paper_checkbox = gr.Checkbox(
+                        value=True, label="Isolate to this paper only",
+                        info="Search only within this paper's content"
+                    )
+
+                    gr.Markdown("#### Fine-tuning")
+                    finetune_btn = gr.Button("Fine-tune on this Paper", variant="secondary")
+                    paper_models_btn = gr.Button("Show Paper Models", size="sm")
+
+                with gr.Column(scale=2):
+                    gr.Markdown("#### Paper Info")
+                    paper_info_display = gr.Markdown(
+                        value="*Load a paper to see details.*",
+                    )
+
+                    gr.Markdown("#### Query")
+                    study_query_input = gr.Textbox(
+                        placeholder="Ask a question about this specific paper...",
+                        label="Question", lines=3,
+                    )
+                    study_query_btn = gr.Button("Ask Question", variant="primary")
+
+                    gr.Markdown("#### Response")
+                    study_response_display = gr.Markdown(
+                        value="*Response will appear here.*",
+                    )
+
+                    gr.Markdown("#### Fine-tuning Status")
+                    finetune_status_display = gr.Markdown(
+                        value="*Fine-tuning status will appear here.*",
+                    )
+
+                    gr.Markdown("#### Available Models")
+                    paper_models_display = gr.Markdown(
+                        value="*Paper-specific models will appear here.*",
+                    )
+
+            # Paper study event handlers
+            load_paper_btn.click(
+                fn=load_study_paper_fn, inputs=[study_paper_input],
+                outputs=[paper_info_display],
+            )
+            study_query_btn.click(
+                fn=study_query_fn,
+                inputs=[study_paper_input, study_query_input, study_task_dropdown,
+                       study_model_dropdown, isolate_paper_checkbox],
+                outputs=[study_response_display],
+            )
+            finetune_btn.click(
+                fn=start_paper_finetune_fn, inputs=[study_paper_input],
+                outputs=[finetune_status_display],
+            )
+            paper_models_btn.click(
+                fn=show_paper_models_fn, inputs=[study_paper_input],
+                outputs=[paper_models_display],
+            )
+
+        # ========================================
+        #  Tab 5: Dashboard
         # ========================================
         with gr.Tab("Dashboard"):
             gr.Markdown("### System Status\nOverview of data, sessions, feedback, and models.")
