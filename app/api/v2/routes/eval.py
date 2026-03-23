@@ -10,13 +10,15 @@ import logging
 import uuid
 from datetime import datetime, timezone
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 from typing import Any
 
 from app.db.session import get_db_sync
 from app.db.models.eval_run import EvalRun
+from app.core.security import get_current_user
+from app.core.audit import log_audit_from_request
 
 logger = logging.getLogger(__name__)
 
@@ -45,7 +47,12 @@ class EvalRunOut(BaseModel):
 
 
 @router.post("/runs", response_model=EvalRunOut, status_code=201)
-def create_eval_run(req: EvalRunCreate, db: Session = Depends(get_db_sync)):
+def create_eval_run(
+    req: EvalRunCreate,
+    request: Request,
+    db: Session = Depends(get_db_sync),
+    user: dict = Depends(get_current_user),
+):
     """Start a new evaluation run."""
     run = EvalRun(
         id=uuid.uuid4(),
@@ -55,10 +62,17 @@ def create_eval_run(req: EvalRunCreate, db: Session = Depends(get_db_sync)):
         status="pending",
     )
     db.add(run)
+    log_audit_from_request(
+        db, request, action="eval.create",
+        resource="eval_run", resource_id=run.id,
+    )
     db.commit()
     db.refresh(run)
 
-    # TODO: dispatch Celery task for async eval execution
+    # Dispatch Celery task for async eval execution
+    from app.workers.tasks.evaluate import run_evaluation
+    run_evaluation.delay(str(run.id))
+
     logger.info("Created eval run %s (type=%s)", run.id, run.eval_type)
     return run
 

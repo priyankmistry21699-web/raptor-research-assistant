@@ -4,7 +4,6 @@ Chat routes — /api/v2/chat
 Session-based chat with RAG retrieval and citation tracking.
 """
 
-import time
 import uuid
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -13,6 +12,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.session import get_db
 from app.db.models.chat import ChatSession, ChatMessage
+from app.core.security import get_current_user
 from app.api.v2.schemas import (
     ChatSessionCreate, ChatSessionOut,
     ChatMessageIn, ChatMessageOut,
@@ -27,6 +27,7 @@ router = APIRouter(prefix="/chat", tags=["chat"])
 async def create_session(
     body: ChatSessionCreate,
     db: AsyncSession = Depends(get_db),
+    user: dict = Depends(get_current_user),
 ):
     session = ChatSession(
         collection_id=body.collection_id,
@@ -40,7 +41,10 @@ async def create_session(
 
 
 @router.get("/sessions", response_model=list[ChatSessionOut])
-async def list_sessions(db: AsyncSession = Depends(get_db)):
+async def list_sessions(
+    db: AsyncSession = Depends(get_db),
+    user: dict = Depends(get_current_user),
+):
     result = await db.execute(
         select(ChatSession).order_by(ChatSession.updated_at.desc())
     )
@@ -51,6 +55,7 @@ async def list_sessions(db: AsyncSession = Depends(get_db)):
 async def get_session_messages(
     session_id: uuid.UUID,
     db: AsyncSession = Depends(get_db),
+    user: dict = Depends(get_current_user),
 ):
     session = await db.get(ChatSession, session_id)
     if not session:
@@ -67,6 +72,7 @@ async def get_session_messages(
 async def delete_session(
     session_id: uuid.UUID,
     db: AsyncSession = Depends(get_db),
+    user: dict = Depends(get_current_user),
 ):
     session = await db.get(ChatSession, session_id)
     if not session:
@@ -81,6 +87,7 @@ async def send_message(
     session_id: uuid.UUID,
     body: ChatMessageIn,
     db: AsyncSession = Depends(get_db),
+    user: dict = Depends(get_current_user),
 ):
     """
     Accept a user message, run retrieval + LLM generation, return
@@ -99,53 +106,36 @@ async def send_message(
     db.add(user_msg)
     await db.flush()
 
-    # Retrieve context from Qdrant
-    start = time.perf_counter()
-    from app.storage.vector_store import search as qdrant_search
-    from app.core.config import settings
-    from sentence_transformers import SentenceTransformer
-
-    model = SentenceTransformer(settings.embedding_model)
-    query_vec = model.encode(body.content, normalize_embeddings=True).tolist()
-    chunks = qdrant_search(session.collection_id, query_vec, top_k=8)
-
-    # Build prompt with retrieved context
-    context_text = "\n\n".join(
-        f"[{i+1}] {c['payload'].get('text', '')}" for i, c in enumerate(chunks)
+    # Build chat history from previous messages
+    history_result = await db.execute(
+        select(ChatMessage)
+        .where(ChatMessage.session_id == session_id)
+        .where(ChatMessage.role.in_(["user", "assistant"]))
+        .order_by(ChatMessage.created_at)
     )
-    citations = {
-        str(i+1): {
-            "chunk_id": c["id"],
-            "document_id": c["payload"].get("document_id"),
-            "score": c["score"],
-        }
-        for i, c in enumerate(chunks)
-    }
-
-    system_prompt = (
-        "You are a helpful research assistant. Answer the user's question based on the "
-        "provided context. Cite sources using [1], [2], etc. If the context is insufficient, "
-        "say so clearly.\n\n"
-        f"Context:\n{context_text}"
-    )
-
-    # Call LLM
-    from app.core.llm_client import run_llm_messages
-    messages = [
-        {"role": "system", "content": system_prompt},
-        {"role": "user", "content": body.content},
+    history_msgs = history_result.scalars().all()
+    chat_history = [
+        {"role": m.role, "content": m.content} for m in history_msgs
     ]
-    answer = run_llm_messages(messages)
-    elapsed_ms = int((time.perf_counter() - start) * 1000)
+
+    # Generate answer using unified generation layer (LiteLLM + retrieval orchestrator)
+    from app.core.generation import generate_with_retrieval
+
+    result = generate_with_retrieval(
+        question=body.content,
+        collection_id=str(session.collection_id),
+        chat_history=chat_history,
+        top_k=8,
+    )
 
     # Save assistant message
     assistant_msg = ChatMessage(
         session_id=session_id,
         role="assistant",
-        content=answer,
-        citations=citations,
-        model_used=settings.llm.model,
-        latency_ms=elapsed_ms,
+        content=result["content"],
+        citations=result.get("citations"),
+        model_used=result.get("model_used", "unknown"),
+        latency_ms=result.get("latency_ms", 0),
     )
     db.add(assistant_msg)
     await db.flush()

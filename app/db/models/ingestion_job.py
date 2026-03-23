@@ -3,7 +3,7 @@
 import uuid
 from datetime import datetime, timezone
 
-from sqlalchemy import String, Text, SmallInteger, Integer, DateTime, ForeignKey, text
+from sqlalchemy import String, Text, SmallInteger, Integer, DateTime, ForeignKey, CheckConstraint, text
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -39,3 +39,11 @@ class IngestionJob(Base):
 
     # Relationships
     document = relationship("Document", back_populates="ingestion_jobs")
+
+    __table_args__ = (
+        CheckConstraint(
+            "status IN ('pending', 'running', 'completed', 'failed', 'cancelled')",
+            name="ck_ingestion_job_status",
+        ),
+        CheckConstraint("progress_pct >= 0 AND progress_pct <= 100", name="ck_ingestion_progress"),
+    )

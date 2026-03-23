@@ -3,7 +3,7 @@
 import uuid
 from datetime import datetime, timezone
 
-from sqlalchemy import String, DateTime, ForeignKey, JSON, text
+from sqlalchemy import String, DateTime, ForeignKey, JSON, CheckConstraint, text
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -57,3 +57,10 @@ class WorkspaceMember(Base):
     # Relationships
     workspace = relationship("Workspace", back_populates="members")
     user = relationship("User", back_populates="workspace_memberships")
+
+    __table_args__ = (
+        CheckConstraint(
+            "role IN ('owner', 'admin', 'editor', 'member', 'viewer')",
+            name="ck_workspace_member_role",
+        ),
+    )

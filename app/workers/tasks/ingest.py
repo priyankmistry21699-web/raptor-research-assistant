@@ -13,6 +13,8 @@ import re
 import uuid
 from datetime import datetime, timezone
 
+from celery.exceptions import MaxRetriesExceededError
+
 from app.workers.celery_app import celery_app
 from app.db.session import SyncSessionLocal
 from app.db.models.ingestion_job import IngestionJob
@@ -122,14 +124,23 @@ def _embed_chunks(chunks: list[dict]) -> list[list[float]]:
     return embeddings.tolist()
 
 
-def _build_raptor_tree(chunks: list[dict], embeddings: list[list[float]]) -> list[dict]:
+def _build_raptor_tree(chunks: list[dict], embeddings: list[list[float]],
+                       collection_id: uuid.UUID, document_id: uuid.UUID) -> list[dict]:
     """
-    Build RAPTOR hierarchical summaries.
+    Build RAPTOR hierarchical summaries using the real tree builder.
     Returns additional summary-level nodes to index alongside leaf chunks.
     """
-    # Placeholder — will integrate with existing RAPTOR tree builder
-    # For now, return empty (leaf-only indexing)
-    return []
+    try:
+        from app.core.raptor_tree_builder import build_raptor_tree
+        return build_raptor_tree(
+            chunks=chunks,
+            embeddings=embeddings,
+            collection_id=collection_id,
+            document_id=document_id,
+        )
+    except Exception as e:
+        logger.warning("RAPTOR tree building failed, continuing with leaf-only: %s", e)
+        return []
 
 
 def _persist_chunk_metadata(
@@ -159,8 +170,10 @@ def _persist_tree_nodes(
     chunks: list[dict],
     document_id: uuid.UUID,
     collection_id: uuid.UUID,
+    summary_nodes: list[dict] | None = None,
 ) -> None:
-    """Create chunk-level TreeNode entries (leaf nodes of RAPTOR tree)."""
+    """Create TreeNode entries for both leaf chunks and summary nodes."""
+    # Leaf nodes
     for c in chunks:
         node = TreeNode(
             id=uuid.uuid4(),
@@ -172,6 +185,23 @@ def _persist_tree_nodes(
             vector_id=c["id"],
         )
         session.add(node)
+
+    # Summary nodes from RAPTOR tree
+    if summary_nodes:
+        for sn in summary_nodes:
+            node = TreeNode(
+                id=uuid.UUID(sn["id"]),
+                collection_id=collection_id,
+                document_id=document_id,
+                node_type=sn.get("node_type", "section"),
+                level=sn.get("level", 1),
+                label=sn.get("label"),
+                summary=sn.get("summary"),
+                vector_id=sn["id"],
+                children_count=len(sn.get("children_ids", [])),
+            )
+            session.add(node)
+
     session.flush()
 
 
@@ -199,7 +229,15 @@ def _index_vectors(
 
 # ── Main Celery task ──────────────────────────────────────────────────
 
-@celery_app.task(bind=True, max_retries=2, default_retry_delay=30)
+@celery_app.task(
+    bind=True,
+    max_retries=3,
+    default_retry_delay=30,
+    autoretry_for=(ConnectionError, TimeoutError),
+    retry_backoff=True,
+    retry_backoff_max=300,
+    acks_late=True,
+)
 def run_ingestion_pipeline(self, job_id: str, document_id: str, collection_id: str):
     """
     Execute the full ingestion pipeline for a single document.
@@ -251,16 +289,21 @@ def run_ingestion_pipeline(self, job_id: str, document_id: str, collection_id: s
         embeddings = _embed_chunks(chunks)
         _update_job(session, job, "embedding", 70)
 
-        # 6. RAPTOR tree (optional hierarchical summarisation)
+        # 6. RAPTOR tree (hierarchical summarisation)
         _update_job(session, job, "tree_building", 75)
-        summary_nodes = _build_raptor_tree(chunks, embeddings)
-        _persist_tree_nodes(session, chunks, doc_uuid, col_uuid)
+        summary_nodes = _build_raptor_tree(chunks, embeddings, col_uuid, doc_uuid)
+        _persist_tree_nodes(session, chunks, doc_uuid, col_uuid, summary_nodes=summary_nodes)
         _update_job(session, job, "tree_building", 80)
 
-        # 6. Index
+        # 7. Index
         _update_job(session, job, "indexing", 85)
-        all_chunks = chunks + summary_nodes
-        all_embeddings = embeddings  # TODO: add summary embeddings
+        # Combine leaf chunks and summary nodes for vector indexing
+        all_chunks = list(chunks)
+        all_embeddings = list(embeddings)
+        for sn in summary_nodes:
+            if sn.get("embedding"):
+                all_chunks.append({"id": sn["id"], "text": sn["text"], "chunk_index": -1})
+                all_embeddings.append(sn["embedding"])
         count = _index_vectors(col_uuid, all_chunks, all_embeddings, doc_uuid)
         _update_job(session, job, "indexing", 95)
 
@@ -282,6 +325,9 @@ def run_ingestion_pipeline(self, job_id: str, document_id: str, collection_id: s
             job.completed_at = datetime.now(timezone.utc)
             session.commit()
         logger.exception("Ingestion failed for document %s", document_id)
-        raise self.retry(exc=exc)
+        try:
+            raise self.retry(exc=exc)
+        except MaxRetriesExceededError:
+            logger.error("Max retries exceeded for document %s", document_id)
     finally:
         session.close()

@@ -34,6 +34,12 @@ cryptography>=42
 sentry-sdk[fastapi]>=2.5
 prometheus-fastapi-instrumentator>=7.0
 
+## OpenTelemetry (distributed tracing)
+opentelemetry-api>=1.24
+opentelemetry-sdk>=1.24
+opentelemetry-instrumentation-fastapi>=0.45b
+opentelemetry-exporter-otlp-proto-grpc>=1.24
+
 ## PDF / Document processing
 pymupdf>=1.24
 unstructured>=0.14
@@ -59,3 +65,8 @@ PyYAML>=6.0
 python-dotenv>=1.0
 requests>=2.32
 arxiv>=2.1
+
+## Dev / CI tooling
+ruff>=0.4
+bandit>=1.7
+datasets>=2.19

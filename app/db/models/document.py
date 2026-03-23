@@ -3,7 +3,7 @@
 import uuid
 from datetime import datetime, timezone
 
-from sqlalchemy import String, Text, BigInteger, Integer, DateTime, ForeignKey, JSON, text
+from sqlalchemy import String, Text, BigInteger, Integer, DateTime, ForeignKey, JSON, CheckConstraint, text
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -42,6 +42,13 @@ class Document(Base):
     collection = relationship("Collection", back_populates="documents")
     versions = relationship("DocumentVersion", back_populates="document", cascade="all, delete-orphan")
     ingestion_jobs = relationship("IngestionJob", back_populates="document", cascade="all, delete-orphan")
+
+    __table_args__ = (
+        CheckConstraint(
+            "status IN ('uploaded', 'processing', 'ready', 'failed', 'archived')",
+            name="ck_document_status",
+        ),
+    )
 
 
 class DocumentVersion(Base):

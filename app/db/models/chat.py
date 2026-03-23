@@ -3,7 +3,7 @@
 import uuid
 from datetime import datetime, timezone
 
-from sqlalchemy import String, Text, Integer, Float, DateTime, ForeignKey, text
+from sqlalchemy import String, Text, Integer, Float, DateTime, ForeignKey, CheckConstraint, Index, text
 from sqlalchemy.dialects.postgresql import UUID, JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -61,6 +61,11 @@ class ChatMessage(Base):
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=lambda: datetime.now(timezone.utc),
         server_default=text("NOW()"),
+    )
+
+    __table_args__ = (
+        CheckConstraint("role IN ('user', 'assistant', 'system')", name="ck_chat_message_role"),
+        Index("ix_chat_messages_session_created", "session_id", "created_at"),
     )
 
     # Relationships

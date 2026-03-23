@@ -3,7 +3,7 @@
 import uuid
 from datetime import datetime, timezone
 
-from sqlalchemy import String, Text, SmallInteger, DateTime, ForeignKey, text
+from sqlalchemy import String, Text, SmallInteger, DateTime, ForeignKey, CheckConstraint, text
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -30,6 +30,10 @@ class Feedback(Base):
 
     # Relationships
     message = relationship("ChatMessage", back_populates="feedback")
+
+    __table_args__ = (
+        CheckConstraint("rating >= 1 AND rating <= 5", name="ck_feedback_rating"),
+    )
 
 
 class PreferencePair(Base):

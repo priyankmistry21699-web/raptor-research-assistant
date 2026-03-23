@@ -8,11 +8,14 @@ POST /generate/raw       — Direct LLM generation without retrieval
 import logging
 import uuid
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
 from app.db.session import get_db_sync
+from app.core.security import get_current_user
+from app.core.audit import log_audit_from_request
+from app.core.sanitize import sanitize_prompt
 
 logger = logging.getLogger(__name__)
 
@@ -43,28 +46,45 @@ class GenerateResponse(BaseModel):
 
 
 @router.post("", response_model=GenerateResponse)
-def generate_with_rag(req: GenerateRequest, db: Session = Depends(get_db_sync)):
+def generate_with_rag(
+    req: GenerateRequest,
+    request: Request,
+    db: Session = Depends(get_db_sync),
+    user: dict = Depends(get_current_user),
+):
     """RAG generation: retrieve context from collection then generate."""
     from app.core.generation import generate_with_retrieval
 
+    cleaned_question = sanitize_prompt(req.question)
     result = generate_with_retrieval(
-        question=req.question,
+        question=cleaned_question,
         collection_id=req.collection_id,
         top_k=req.top_k,
         session=db,
+    )
+    log_audit_from_request(
+        db, request, action="generation.rag",
+        resource="collection", resource_id=req.collection_id,
     )
     return GenerateResponse(**result)
 
 
 @router.post("/raw", response_model=GenerateResponse)
-def generate_raw(req: GenerateRawRequest):
+def generate_raw(
+    req: GenerateRawRequest,
+    request: Request,
+    db: Session = Depends(get_db_sync),
+    user: dict = Depends(get_current_user),
+):
     """Direct LLM generation without retrieval."""
     from app.core.generation import generate
 
+    cleaned_prompt = sanitize_prompt(req.prompt)
     result = generate(
-        question=req.prompt,
+        question=cleaned_prompt,
         system_prompt=req.system_prompt,
         temperature=req.temperature,
         max_tokens=req.max_tokens,
     )
+    log_audit_from_request(db, request, action="generation.raw", resource="llm")
     return GenerateResponse(**result)

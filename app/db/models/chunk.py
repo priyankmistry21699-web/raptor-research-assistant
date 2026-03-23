@@ -3,7 +3,7 @@
 import uuid
 from datetime import datetime, timezone
 
-from sqlalchemy import String, Text, Integer, DateTime, ForeignKey, text
+from sqlalchemy import String, Text, Integer, DateTime, ForeignKey, Index, text
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -40,3 +40,8 @@ class ChunkMetadata(Base):
     # Relationships
     document = relationship("Document", backref="chunks")
     collection = relationship("Collection", backref="chunks")
+
+    __table_args__ = (
+        Index("ix_chunks_document_index", "document_id", "chunk_index"),
+        Index("ix_chunks_collection_document", "collection_id", "document_id"),
+    )

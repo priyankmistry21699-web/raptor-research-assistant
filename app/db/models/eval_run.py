@@ -3,7 +3,7 @@
 import uuid
 from datetime import datetime, timezone
 
-from sqlalchemy import String, Text, DateTime, ForeignKey, text
+from sqlalchemy import String, Text, DateTime, ForeignKey, CheckConstraint, text
 from sqlalchemy.dialects.postgresql import UUID, JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -37,3 +37,10 @@ class EvalRun(Base):
 
     # Relationships
     collection = relationship("Collection", backref="eval_runs")
+
+    __table_args__ = (
+        CheckConstraint(
+            "status IN ('pending', 'running', 'completed', 'failed')",
+            name="ck_eval_run_status",
+        ),
+    )

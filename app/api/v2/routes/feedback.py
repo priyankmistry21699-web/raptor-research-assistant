@@ -6,14 +6,15 @@ Captures user ratings and comments on assistant messages.
 
 import uuid
 
-from fastapi import APIRouter, Depends, HTTPException
-from sqlalchemy import select
+from fastapi import APIRouter, Depends, HTTPException, Query
+from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.session import get_db
 from app.db.models.feedback import Feedback
 from app.db.models.chat import ChatMessage
-from app.api.v2.schemas import FeedbackCreate, FeedbackOut
+from app.core.security import get_current_user
+from app.api.v2.schemas import FeedbackCreate, FeedbackOut, PaginatedResponse
 
 router = APIRouter(prefix="/feedback", tags=["feedback"])
 
@@ -22,6 +23,7 @@ router = APIRouter(prefix="/feedback", tags=["feedback"])
 async def submit_feedback(
     body: FeedbackCreate,
     db: AsyncSession = Depends(get_db),
+    user: dict = Depends(get_current_user),
 ):
     # Verify the message exists
     msg = await db.get(ChatMessage, body.message_id)
@@ -48,16 +50,21 @@ async def submit_feedback(
     return fb
 
 
-@router.get("", response_model=list[FeedbackOut])
+@router.get("", response_model=PaginatedResponse)
 async def list_feedback(
-    limit: int = 50,
-    offset: int = 0,
+    page: int = Query(default=1, ge=1),
+    page_size: int = Query(default=20, ge=1, le=100),
     db: AsyncSession = Depends(get_db),
+    user: dict = Depends(get_current_user),
 ):
+    offset = (page - 1) * page_size
+    total_result = await db.execute(select(func.count()).select_from(Feedback))
+    total = total_result.scalar() or 0
     result = await db.execute(
         select(Feedback)
         .order_by(Feedback.created_at.desc())
         .offset(offset)
-        .limit(min(limit, 200))
+        .limit(page_size)
     )
-    return result.scalars().all()
+    items = result.scalars().all()
+    return PaginatedResponse(items=items, total=total, page=page, page_size=page_size)

@@ -3,7 +3,7 @@
 import uuid
 from datetime import datetime, timezone
 
-from sqlalchemy import String, Integer, Float, Text, DateTime, text
+from sqlalchemy import String, Integer, Float, Text, DateTime, CheckConstraint, text
 from sqlalchemy.dialects.postgresql import UUID, JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -32,4 +32,15 @@ class TrainingRun(Base):
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=lambda: datetime.now(timezone.utc),
         server_default=text("NOW()"),
+    )
+
+    __table_args__ = (
+        CheckConstraint(
+            "status IN ('pending', 'running', 'completed', 'failed', 'cancelled')",
+            name="ck_training_run_status",
+        ),
+        CheckConstraint(
+            "run_type IN ('dpo', 'sft', 'rlhf')",
+            name="ck_training_run_type",
+        ),
     )

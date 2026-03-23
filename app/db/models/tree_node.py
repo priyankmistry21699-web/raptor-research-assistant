@@ -3,7 +3,7 @@
 import uuid
 from datetime import datetime, timezone
 
-from sqlalchemy import String, Text, Integer, DateTime, ForeignKey, text
+from sqlalchemy import String, Text, Integer, DateTime, ForeignKey, CheckConstraint, Index, text
 from sqlalchemy.dialects.postgresql import UUID, JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -46,3 +46,12 @@ class TreeNode(Base):
     collection = relationship("Collection", backref="tree_nodes")
     document = relationship("Document", backref="tree_nodes")
     parent = relationship("TreeNode", remote_side=[id], backref="children")
+
+    __table_args__ = (
+        CheckConstraint(
+            "node_type IN ('document', 'topic', 'section', 'chunk', 'root')",
+            name="ck_tree_node_type",
+        ),
+        CheckConstraint("level >= 0", name="ck_tree_node_level"),
+        Index("ix_tree_nodes_collection_type_level", "collection_id", "node_type", "level"),
+    )

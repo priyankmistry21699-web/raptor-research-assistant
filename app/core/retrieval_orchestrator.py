@@ -50,6 +50,7 @@ def _traverse_tree_nodes(
     """
     Walk up the RAPTOR tree from chunk-level nodes to get
     section and topic summaries for richer context.
+    Also fetch direct summary nodes that match the collection.
     """
     from app.db.models.tree_node import TreeNode
 
@@ -81,6 +82,30 @@ def _traverse_tree_nodes(
                     "label": parent.label,
                 })
             parent = parent.parent
+
+    # Also fetch any summary nodes (section/topic/root) for the collection
+    # that may not be in the parent chain of matched chunks
+    if not extra_context:
+        summary_nodes = (
+            session.query(TreeNode)
+            .filter(
+                TreeNode.collection_id == collection_id,
+                TreeNode.node_type.in_(["section", "topic", "root"]),
+                TreeNode.summary.isnot(None),
+            )
+            .order_by(TreeNode.level.desc())
+            .limit(5)
+            .all()
+        )
+        for sn in summary_nodes:
+            if sn.id not in seen_ids:
+                extra_context.append({
+                    "id": str(sn.id),
+                    "text": sn.summary,
+                    "node_type": sn.node_type,
+                    "level": sn.level,
+                    "label": sn.label,
+                })
 
     return extra_context
 

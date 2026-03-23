@@ -1,5 +1,5 @@
 """
-Admin routes — Platform administration.
+Admin routes — Platform administration (admin-only).
 
 GET  /admin/stats                — Platform statistics
 GET  /admin/models               — List registered models
@@ -11,7 +11,7 @@ import logging
 import uuid
 from datetime import datetime, timezone
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from pydantic import BaseModel, Field
 from sqlalchemy import func
 from sqlalchemy.orm import Session
@@ -24,6 +24,8 @@ from app.db.models.collection import Collection
 from app.db.models.ingestion_job import IngestionJob
 from app.db.models.model_registry import ModelRegistry
 from app.db.models.audit_log import AuditLog
+from app.core.security import require_role
+from app.core.audit import log_audit_from_request
 
 logger = logging.getLogger(__name__)
 
@@ -41,7 +43,10 @@ class PlatformStats(BaseModel):
 
 
 @router.get("/stats", response_model=PlatformStats)
-def get_stats(db: Session = Depends(get_db_sync)):
+def get_stats(
+    db: Session = Depends(get_db_sync),
+    _admin: dict = Depends(require_role("admin")),
+):
     """Platform-wide statistics."""
     total_users = db.query(func.count(User.id)).scalar() or 0
     total_collections = db.query(func.count(Collection.id)).scalar() or 0
@@ -93,6 +98,7 @@ def list_models(
     model_type: str | None = Query(default=None),
     active_only: bool = Query(default=False),
     db: Session = Depends(get_db_sync),
+    _admin: dict = Depends(require_role("admin")),
 ):
     """List registered models."""
     q = db.query(ModelRegistry)
@@ -104,7 +110,12 @@ def list_models(
 
 
 @router.post("/models", response_model=ModelRegistryOut, status_code=201)
-def register_model(req: ModelRegisterRequest, db: Session = Depends(get_db_sync)):
+def register_model(
+    req: ModelRegisterRequest,
+    request: Request,
+    db: Session = Depends(get_db_sync),
+    _admin: dict = Depends(require_role("admin")),
+):
     """Register a new model version."""
     existing = (
         db.query(ModelRegistry)
@@ -124,6 +135,7 @@ def register_model(req: ModelRegisterRequest, db: Session = Depends(get_db_sync)
         is_active=req.is_active,
     )
     db.add(model)
+    log_audit_from_request(db, request, action="model.register", resource="model", resource_id=model.id)
     db.commit()
     db.refresh(model)
     return model
@@ -148,6 +160,7 @@ class AuditLogOut(BaseModel):
 def list_audit_logs(
     user_id: uuid.UUID | None = Query(default=None),
     action: str | None = Query(default=None),
+    _admin: dict = Depends(require_role("admin")),
     resource: str | None = Query(default=None),
     limit: int = Query(default=50, ge=1, le=500),
     offset: int = Query(default=0, ge=0),

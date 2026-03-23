@@ -8,6 +8,7 @@ from fastapi import APIRouter, Depends
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.session import get_db
+from app.core.security import get_current_user
 from app.api.v2.schemas import RetrieveRequest, RetrieveResponse, RetrieveChunk
 
 router = APIRouter(prefix="/retrieve", tags=["retrieve"])
@@ -17,24 +18,25 @@ router = APIRouter(prefix="/retrieve", tags=["retrieve"])
 async def retrieve(
     body: RetrieveRequest,
     db: AsyncSession = Depends(get_db),
+    user: dict = Depends(get_current_user),
 ):
     """Semantic search against a collection's vector index."""
-    from app.storage.vector_store import search as qdrant_search
-    from app.core.config import settings
-    from sentence_transformers import SentenceTransformer
+    from app.core.retrieval_orchestrator import retrieve as orchestrator_retrieve
 
-    model = SentenceTransformer(settings.embedding_model)
-    query_vec = model.encode(body.query, normalize_embeddings=True).tolist()
-    results = qdrant_search(body.collection_id, query_vec, top_k=body.top_k)
+    result = orchestrator_retrieve(
+        query=body.query,
+        collection_id=body.collection_id,
+        top_k=body.top_k,
+    )
 
     chunks = [
         RetrieveChunk(
-            id=r["id"],
-            text=r["payload"].get("text", ""),
-            score=r["score"],
-            document_id=r["payload"].get("document_id"),
-            chunk_index=r["payload"].get("chunk_index"),
+            id=c.get("id", ""),
+            text=c.get("text", ""),
+            score=c.get("score", 0.0),
+            document_id=c.get("document_id"),
+            chunk_index=c.get("chunk_index"),
         )
-        for r in results
+        for c in result.get("chunks", [])
     ]
     return RetrieveResponse(query=body.query, chunks=chunks)
