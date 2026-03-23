@@ -1,34 +1,129 @@
 # ROADMAP: 48/100 → 100/100
 ## RAPTOR Research Assistant — Complete Production Readiness Plan
 
-**Current Score: 48/100 | Target: 100/100 | Gap: 52 points**
+**Initial Score: 48/100 | Current Score: 78/100 | Target: 100/100 | Gap: 22 points**
+**Last Audit: Phase 1+2 Complete (commit b5e0caf)**
 
 ---
 
 ## Scoring Reference (20 Categories × 5 points each)
 
-| #  | Category           | Current | Target | Gap | Phase |
-|----|-------------------|---------|--------|-----|-------|
-| 1  | Frontend           | 2       | 5      | +3  | 5     |
-| 2  | Authentication     | 2       | 5      | +3  | 1     |
-| 3  | Authorization/RBAC | 1       | 5      | +4  | 1     |
-| 4  | API Design         | 3       | 5      | +2  | 2     |
-| 5  | Data Models        | 4       | 5      | +1  | 2     |
-| 6  | Database/Migrations| 2       | 5      | +3  | 1     |
-| 7  | Object Storage     | 4       | 5      | +1  | 3     |
-| 8  | Vector Database    | 4       | 5      | +1  | 3     |
-| 9  | Async Job Pipeline | 4       | 5      | +1  | 2     |
-| 10 | Ingestion Pipeline | 3       | 5      | +2  | 2     |
-| 11 | Retrieval/Reranker | 3       | 5      | +2  | 2     |
-| 12 | RAPTOR Hierarchy   | 1       | 5      | +4  | 2     |
-| 13 | LLM/Generation     | 3       | 5      | +2  | 3     |
-| 14 | Citations          | 3       | 5      | +2  | 3     |
-| 15 | Feedback/Evaluation| 3       | 5      | +2  | 3     |
-| 16 | Security           | 1       | 5      | +4  | 1     |
-| 17 | Observability      | 1       | 5      | +4  | 1     |
-| 18 | CI/CD              | 0       | 5      | +5  | 1     |
-| 19 | Config/Secrets     | 4       | 5      | +1  | 3     |
-| 20 | Backup/DR          | 0       | 5      | +5  | 4     |
+| #  | Category           | Initial | Phase1+2 | Target | Gap | Phase |
+|----|-------------------|---------|----------|--------|-----|-------|
+| 1  | Frontend           | 2       | 2        | 5      | +3  | 5     |
+| 2  | Authentication     | 2       | 5        | 5      | 0   | ✅    |
+| 3  | Authorization/RBAC | 1       | 4        | 5      | +1  | 5     |
+| 4  | API Design         | 3       | 5        | 5      | 0   | ✅    |
+| 5  | Data Models        | 4       | 5        | 5      | 0   | ✅    |
+| 6  | Database/Migrations| 2       | 5        | 5      | 0   | ✅    |
+| 7  | Object Storage     | 4       | 4        | 5      | +1  | 3     |
+| 8  | Vector Database    | 4       | 4        | 5      | +1  | 3     |
+| 9  | Async Job Pipeline | 4       | 5        | 5      | 0   | ✅    |
+| 10 | Ingestion Pipeline | 3       | 5        | 5      | 0   | ✅    |
+| 11 | Retrieval/Reranker | 3       | 4        | 5      | +1  | 3     |
+| 12 | RAPTOR Hierarchy   | 1       | 5        | 5      | 0   | ✅    |
+| 13 | LLM/Generation     | 3       | 4        | 5      | +1  | 3     |
+| 14 | Citations          | 3       | 3        | 5      | +2  | 3     |
+| 15 | Feedback/Evaluation| 3       | 4        | 5      | +1  | 3     |
+| 16 | Security           | 1       | 4        | 5      | +1  | 3     |
+| 17 | Observability      | 1       | 4        | 5      | +1  | 4     |
+| 18 | CI/CD              | 0       | 4        | 5      | +1  | 5     |
+| 19 | Config/Secrets     | 4       | 4        | 5      | +1  | 3     |
+| 20 | Backup/DR          | 0       | 0        | 5      | +5  | 4     |
+
+### Phase 1+2 Audit Evidence
+
+#### ✅ Authentication (2→5)
+- Auth bypass fixed: dev mode restricted to `ENVIRONMENT=development` + viewer role only
+- Clerk JWT verification for all protected routes
+- `/api/v1/*` removed from PUBLIC_PREFIXES (requires auth)
+- Startup validation blocks production without CLERK_SECRET_KEY
+- `get_current_user` dependency on ALL v2 routes
+
+#### ✅ Authorization/RBAC (1→4)
+- Role hierarchy: admin(3) > editor(2) > viewer(1)
+- `require_role()` and `require_roles()` dependency factories
+- Admin routes protected with `require_role("admin")`
+- Training creation requires `require_role("editor")`
+- All read routes require authenticated user
+- Missing: frontend RBAC rendering, workspace-level RBAC
+
+#### ✅ API Design (3→5)
+- Auth on ALL v2 routes (workspaces, collections, documents, feedback, retrieve, training, chat, generate, eval, admin)
+- Pagination via `PaginatedResponse(items, total, page, page_size)` on all list endpoints
+- v1 routes marked `deprecated=True` in OpenAPI
+- Consistent response schemas with Pydantic models
+- Proper OpenAPI tags on all routers
+
+#### ✅ Data Models (4→5)
+- CHECK constraints: chat_message.role, document.status, ingestion_job.status, eval_run.status, training_run.status, training_run.run_type, feedback.rating, tree_node.node_type, tree_node.level, user.role, workspace_member.role
+- Composite indexes: tree_nodes(collection_id, node_type, level), chunks_metadata(document_id, chunk_index), chunks_metadata(collection_id, document_id), chat_messages(session_id, created_at)
+- ON DELETE CASCADE / SET NULL on all foreign keys
+
+#### ✅ Database/Migrations (2→5)
+- Alembic initial migration covers all 16+ tables
+- All CHECK constraints and composite indexes in migration
+- Alembic env.py reads DB URL from app settings
+- Migration script has proper upgrade() and downgrade()
+
+#### ✅ Async Job Pipeline (4→5)
+- Celery tasks: autoretry_for, retry_backoff, retry_backoff_max
+- acks_late=True for at-least-once delivery
+- MaxRetriesExceededError handling with status update to "failed"
+- Async eval dispatch via run_evaluation.delay()
+
+#### ✅ Ingestion Pipeline (3→5)
+- RAPTOR tree builder integrated into ingest pipeline
+- `_build_raptor_tree()` calls `build_raptor_tree()` (real implementation)
+- Summary node embeddings indexed in vector store
+- Progress logging and error handling
+
+#### ✅ RAPTOR Hierarchy (1→5)
+- Full algorithm: KMeans clustering → LLM summarization → embedding → recursive until root
+- Configurable max_depth, max_topics from settings
+- Nodes stored with parent_id chains in tree_nodes table
+- Summary embeddings indexed in Qdrant alongside leaf chunks
+- Fallback to extractive summarization if LLM fails
+
+#### Security (1→4)
+- CORS lockdown: specific methods/headers instead of wildcards
+- Rate limiting: Redis-backed per-user sliding window (120/min default, 20/min generate)
+- Security headers: CSP, HSTS, X-Frame-Options, X-Content-Type-Options, Referrer-Policy
+- Input sanitization: prompt injection detection, control char stripping, HTML escaping
+- Audit logging wired to admin, generate, eval routes
+- Missing: ChromaDB/pickle removal (legacy code)
+
+#### Observability (1→4)
+- Sentry SDK with FastAPI + SQLAlchemy integrations
+- Prometheus metrics at /metrics
+- OpenTelemetry with OTLP exporter + FastAPIInstrumentor
+- Structured logging with request ID
+- Missing: custom business metric alerts, advanced alerting
+
+#### CI/CD (0→4)
+- GitHub Actions CI: lint(ruff), security(bandit), test(pytest), docker build
+- Deploy pipeline: staging → production with approval gate
+- Dependabot for weekly dependency updates
+- Missing: E2E tests, Playwright integration
+
+#### LLM/Generation (3→4)
+- Chat.py v2 consolidated to use generation.py (LiteLLM)
+- Fallback chain: primary → Groq → OpenAI
+- Chat history included in generation
+- Retrieve route uses retrieval_orchestrator
+- Missing: streaming support, token counting
+
+#### Retrieval (3→4)
+- Tree traversal enhanced with fallback to summary nodes
+- Retrieve route uses orchestrator instead of direct Qdrant
+- Reranker exists
+- Missing: caching for tree traversal, weighted tree results
+
+#### Feedback/Evaluation (3→4)
+- Async RAGAS evaluation via Celery task
+- Auth on feedback submission
+- Feedback route with pagination
+- Missing: automated feedback → preference pair pipeline, A/B testing
 
 ---
 
