@@ -2,12 +2,14 @@
 Document ingestion pipeline — Celery task.
 
 Stages:
-  pending → validating → extracting → chunking → embedding
+  pending → validating → extracting → normalizing → chunking → embedding
         → tree_building → indexing → completed  (or → failed)
 """
 
+import hashlib
 import io
 import logging
+import re
 import uuid
 from datetime import datetime, timezone
 
@@ -15,6 +17,8 @@ from app.workers.celery_app import celery_app
 from app.db.session import SyncSessionLocal
 from app.db.models.ingestion_job import IngestionJob
 from app.db.models.document import Document
+from app.db.models.chunk import ChunkMetadata
+from app.db.models.tree_node import TreeNode
 from app.storage import s3_client
 
 logger = logging.getLogger(__name__)
@@ -22,6 +26,7 @@ logger = logging.getLogger(__name__)
 STAGES = [
     "validating",
     "extracting",
+    "normalizing",
     "chunking",
     "embedding",
     "tree_building",
@@ -65,6 +70,25 @@ def _extract_text(file_bytes: bytes, content_type: str) -> str:
         raise ValueError(f"Text extraction not implemented for {content_type}")
 
 
+def _normalize_text(text: str) -> str:
+    """
+    Normalize / clean extracted text:
+      - Collapse excessive whitespace and newlines
+      - Remove control characters except newlines/tabs
+      - Strip leading/trailing whitespace per line
+      - Merge hyphenated line breaks (e.g. "computa-\\ntion" → "computation")
+    """
+    # Remove control chars (keep newline, tab, carriage return)
+    text = re.sub(r'[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]', '', text)
+    # Merge hyphenated line breaks
+    text = re.sub(r'-\s*\n\s*', '', text)
+    # Collapse multiple blank lines into two newlines
+    text = re.sub(r'\n{3,}', '\n\n', text)
+    # Strip trailing whitespace per line
+    text = '\n'.join(line.rstrip() for line in text.split('\n'))
+    return text.strip()
+
+
 def _chunk_text(text: str, chunk_size: int = 500, overlap: int = 50) -> list[dict]:
     """Split text into overlapping chunks with metadata."""
     words = text.split()
@@ -80,6 +104,7 @@ def _chunk_text(text: str, chunk_size: int = 500, overlap: int = 50) -> list[dic
             "chunk_index": idx,
             "word_start": start,
             "word_end": end,
+            "text_hash": hashlib.sha256(chunk_text.encode()).hexdigest(),
         })
         start += chunk_size - overlap
         idx += 1
@@ -105,6 +130,49 @@ def _build_raptor_tree(chunks: list[dict], embeddings: list[list[float]]) -> lis
     # Placeholder — will integrate with existing RAPTOR tree builder
     # For now, return empty (leaf-only indexing)
     return []
+
+
+def _persist_chunk_metadata(
+    session,
+    chunks: list[dict],
+    document_id: uuid.UUID,
+    collection_id: uuid.UUID,
+) -> None:
+    """Save chunk metadata rows to PostgreSQL."""
+    for c in chunks:
+        cm = ChunkMetadata(
+            id=uuid.UUID(c["id"]),
+            document_id=document_id,
+            collection_id=collection_id,
+            chunk_index=c["chunk_index"],
+            text_hash=c["text_hash"],
+            word_start=c["word_start"],
+            word_end=c["word_end"],
+            vector_id=c["id"],
+        )
+        session.add(cm)
+    session.flush()
+
+
+def _persist_tree_nodes(
+    session,
+    chunks: list[dict],
+    document_id: uuid.UUID,
+    collection_id: uuid.UUID,
+) -> None:
+    """Create chunk-level TreeNode entries (leaf nodes of RAPTOR tree)."""
+    for c in chunks:
+        node = TreeNode(
+            id=uuid.uuid4(),
+            collection_id=collection_id,
+            document_id=document_id,
+            node_type="chunk",
+            level=0,
+            label=f"chunk-{c['chunk_index']}",
+            vector_id=c["id"],
+        )
+        session.add(node)
+    session.flush()
 
 
 def _index_vectors(
@@ -161,22 +229,32 @@ def run_ingestion_pipeline(self, job_id: str, document_id: str, collection_id: s
 
         # 2. Extract text
         _update_job(session, job, "extracting", 20)
-        full_text = _extract_text(file_bytes, doc.content_type)
-        _update_job(session, job, "extracting", 35)
+        raw_text = _extract_text(file_bytes, doc.content_type)
+        _update_job(session, job, "extracting", 30)
 
-        # 3. Chunk
+        # 3. Normalize / clean
+        _update_job(session, job, "normalizing", 32)
+        full_text = _normalize_text(raw_text)
+        _update_job(session, job, "normalizing", 38)
+
+        # 4. Chunk
         _update_job(session, job, "chunking", 40)
         chunks = _chunk_text(full_text)
+        _update_job(session, job, "chunking", 48)
+
+        # 4b. Persist chunk metadata to PostgreSQL
+        _persist_chunk_metadata(session, chunks, doc_uuid, col_uuid)
         _update_job(session, job, "chunking", 50)
 
-        # 4. Embed
+        # 5. Embed
         _update_job(session, job, "embedding", 55)
         embeddings = _embed_chunks(chunks)
         _update_job(session, job, "embedding", 70)
 
-        # 5. RAPTOR tree (optional hierarchical summarisation)
+        # 6. RAPTOR tree (optional hierarchical summarisation)
         _update_job(session, job, "tree_building", 75)
         summary_nodes = _build_raptor_tree(chunks, embeddings)
+        _persist_tree_nodes(session, chunks, doc_uuid, col_uuid)
         _update_job(session, job, "tree_building", 80)
 
         # 6. Index

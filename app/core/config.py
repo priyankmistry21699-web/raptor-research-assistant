@@ -3,6 +3,9 @@ RAPTOR RAG Platform — Application Settings
 
 Centralized configuration loaded from environment variables with sensible defaults.
 Uses Pydantic BaseSettings for validation and .env file support.
+
+Supports both local dev (MinIO, local Redis) and GCP production (GCS, Cloud SQL,
+Memorystore) via the same env-var interface.
 """
 
 from typing import List, Optional
@@ -33,12 +36,21 @@ class QdrantSettings(BaseSettings):
     collection_prefix: str = "raptor"
 
 
-class S3Settings(BaseSettings):
+class StorageSettings(BaseSettings):
+    """Object storage — works with both MinIO (local) and GCS (production)."""
+    provider: str = Field(default="s3", alias="STORAGE_PROVIDER")  # "s3" or "gcs"
+    # S3 / MinIO settings (local dev default)
     endpoint: str = Field(default="http://localhost:9000", alias="S3_ENDPOINT")
-    bucket: str = Field(default="raptor-documents", alias="S3_BUCKET")
+    bucket: str = Field(default="raptor-documents", alias="STORAGE_BUCKET")
     access_key: str = Field(default="minioadmin", alias="AWS_ACCESS_KEY_ID")
     secret_key: str = Field(default="minioadmin", alias="AWS_SECRET_ACCESS_KEY")
     region: str = Field(default="us-east-1", alias="S3_REGION")
+    # GCS settings (production)
+    gcs_project: Optional[str] = Field(default=None, alias="GCS_PROJECT")
+    gcs_credentials_json: Optional[str] = Field(default=None, alias="GOOGLE_APPLICATION_CREDENTIALS")
+    # Additional buckets
+    tree_bucket: str = Field(default="raptor-trees", alias="STORAGE_TREE_BUCKET")
+    model_bucket: str = Field(default="raptor-models", alias="STORAGE_MODEL_BUCKET")
 
 
 class LLMSettings(BaseSettings):
@@ -50,6 +62,14 @@ class LLMSettings(BaseSettings):
     groq_api_key: Optional[str] = Field(default=None, alias="GROQ_API_KEY")
     openai_api_key: Optional[str] = Field(default=None, alias="OPENAI_API_KEY")
     anthropic_api_key: Optional[str] = Field(default=None, alias="ANTHROPIC_API_KEY")
+    temperature: float = Field(default=0.3, alias="LLM_TEMPERATURE")
+    max_tokens: int = Field(default=2048, alias="LLM_MAX_TOKENS")
+
+
+class RerankerSettings(BaseSettings):
+    enabled: bool = Field(default=True, alias="RERANKER_ENABLED")
+    model: str = Field(default="BAAI/bge-reranker-base", alias="RERANKER_MODEL")
+    top_k: int = Field(default=5, alias="RERANKER_TOP_K")
 
 
 class AuthSettings(BaseSettings):
@@ -87,9 +107,15 @@ class Settings(BaseSettings):
     database: DatabaseSettings = DatabaseSettings()
     redis: RedisSettings = RedisSettings()
     qdrant: QdrantSettings = QdrantSettings()
-    s3: S3Settings = S3Settings()
+    storage: StorageSettings = StorageSettings()
     llm: LLMSettings = LLMSettings()
+    reranker: RerankerSettings = RerankerSettings()
     auth: AuthSettings = AuthSettings()
+
+    # Backward compat alias
+    @property
+    def s3(self) -> StorageSettings:
+        return self.storage
 
     # Embedding
     embedding_model: str = "sentence-transformers/all-MiniLM-L6-v2"
@@ -98,6 +124,7 @@ class Settings(BaseSettings):
     # RAPTOR
     raptor_max_topics: int = 5
     raptor_chunk_size: int = 500
+    raptor_chunk_overlap: int = 50
 
     model_config = {"env_file": ".env", "env_file_encoding": "utf-8", "extra": "ignore"}
 

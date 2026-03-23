@@ -17,8 +17,8 @@ data/processed/
 data/feedback/
 chroma_db/
 
-# Models
-models/
+# Models (training output artifacts, not DB models)
+/models/
 
 # Jupyter Notebook checkpoints
 .ipynb_checkpoints/

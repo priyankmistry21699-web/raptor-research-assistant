@@ -115,13 +115,20 @@ services:
       DATABASE_URL_SYNC: postgresql://raptor:raptor@postgres:5432/raptor
       REDIS_URL: redis://redis:6379/0
       QDRANT_URL: http://qdrant:6333
+      STORAGE_PROVIDER: s3
       S3_ENDPOINT: http://minio:9000
-      S3_BUCKET: raptor-documents
+      STORAGE_BUCKET: raptor-documents
+      STORAGE_TREE_BUCKET: raptor-trees
+      STORAGE_MODEL_BUCKET: raptor-models
       AWS_ACCESS_KEY_ID: minioadmin
       AWS_SECRET_ACCESS_KEY: minioadmin
       ENVIRONMENT: development
       DEBUG: "true"
       LOG_LEVEL: INFO
+      LLM_PROVIDER: ollama
+      LLM_MODEL: "mistral:latest"
+      OLLAMA_BASE_URL: http://host.docker.internal:11435
+      RERANKER_ENABLED: "true"
     env_file:
       - .env
     volumes:
@@ -154,10 +161,16 @@ services:
       DATABASE_URL_SYNC: postgresql://raptor:raptor@postgres:5432/raptor
       REDIS_URL: redis://redis:6379/0
       QDRANT_URL: http://qdrant:6333
+      STORAGE_PROVIDER: s3
       S3_ENDPOINT: http://minio:9000
-      S3_BUCKET: raptor-documents
+      STORAGE_BUCKET: raptor-documents
+      STORAGE_TREE_BUCKET: raptor-trees
+      STORAGE_MODEL_BUCKET: raptor-models
       AWS_ACCESS_KEY_ID: minioadmin
       AWS_SECRET_ACCESS_KEY: minioadmin
+      LLM_PROVIDER: ollama
+      LLM_MODEL: "mistral:latest"
+      OLLAMA_BASE_URL: http://host.docker.internal:11435
     env_file:
       - .env
     volumes:

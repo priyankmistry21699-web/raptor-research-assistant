@@ -15,6 +15,7 @@ from app.db.models import (  # noqa: F401
     User, Workspace, WorkspaceMember, Collection,
     Document, DocumentVersion, IngestionJob,
     ChatSession, ChatMessage, Feedback, PreferencePair, TrainingRun,
+    ChunkMetadata, TreeNode, EvalRun, ModelRegistry, AuditLog,
 )
 from app.core.config import settings
 

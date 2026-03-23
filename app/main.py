@@ -68,16 +68,24 @@ def create_app() -> FastAPI:
     from app.api.v2.routes.retrieve import router as ret_v2_router
     from app.api.v2.routes.feedback import router as fb_v2_router
     from app.api.v2.routes.training import router as train_v2_router
+    from app.api.v2.routes.auth import router as auth_router
+    from app.api.v2.routes.generate import router as gen_router
+    from app.api.v2.routes.eval import router as eval_v2_router
+    from app.api.v2.routes.admin import router as admin_router
 
     v2_prefix = "/api/v2"
     app.include_router(health_router, prefix=v2_prefix)
+    app.include_router(auth_router, prefix=v2_prefix)
     app.include_router(ws_router, prefix=v2_prefix)
     app.include_router(coll_router, prefix=v2_prefix)
     app.include_router(doc_router, prefix=v2_prefix)
     app.include_router(chat_v2_router, prefix=v2_prefix)
     app.include_router(ret_v2_router, prefix=v2_prefix)
+    app.include_router(gen_router, prefix=v2_prefix)
     app.include_router(fb_v2_router, prefix=v2_prefix)
+    app.include_router(eval_v2_router, prefix=v2_prefix)
     app.include_router(train_v2_router, prefix=v2_prefix)
+    app.include_router(admin_router, prefix=v2_prefix)
 
     # ── Root info ─────────────────────────────────────────────────
     @app.get("/")

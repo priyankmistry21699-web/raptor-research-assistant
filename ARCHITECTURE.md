@@ -1,695 +1,607 @@
-# RAPTOR RAG Platform — Architecture
+# RAPTOR RAG Platform — Architecture (GCP Production)
 
-> System design for the production-grade, multi-tenant RAPTOR RAG platform.
+> Industry-standard, multi-tenant RAPTOR RAG platform designed for GCP deployment.  
+> This document covers the full system design: diagrams, data flows, DB schema, API surface, and storage layout.
 
 ---
 
-## 1. High-Level Architecture
+## 1. High-Level Architecture (Mermaid)
 
-```
-┌─────────────────────────────────────────────────────────────────────────────────┐
-│                              CLIENTS                                             │
-│                                                                                  │
-│   ┌──────────────────────┐    ┌──────────────────────┐                          │
-│   │   Next.js Frontend   │    │   API Consumers       │                          │
-│   │   (Tailwind + shadcn)│    │   (REST / SDK)        │                          │
-│   │   Port: 3000         │    │                       │                          │
-│   └──────────┬───────────┘    └──────────┬────────────┘                          │
-│              │                            │                                       │
-└──────────────┼────────────────────────────┼───────────────────────────────────────┘
-               │ HTTPS                       │ HTTPS
-               ▼                            ▼
-┌─────────────────────────────────────────────────────────────────────────────────┐
-│                         AUTH LAYER (Clerk)                                        │
-│                                                                                  │
-│   JWT verification · User identity · Workspace membership                        │
-│   Middleware on every request                                                    │
-└──────────────────────────────────┬──────────────────────────────────────────────┘
-                                   │ Authenticated request
-                                   ▼
-┌─────────────────────────────────────────────────────────────────────────────────┐
-│                         API GATEWAY (FastAPI)                                    │
-│                         Port: 8000                                               │
-│                                                                                  │
-│   ┌─────────────┐  ┌────────────┐  ┌───────────┐  ┌──────────┐  ┌───────────┐ │
-│   │  /documents  │  │  /chat     │  │ /retrieve │  │ /feedback│  │ /admin    │ │
-│   │  Upload      │  │  Sessions  │  │ Search    │  │ Ratings  │  │ Config    │ │
-│   │  Status      │  │  Messages  │  │ Tree      │  │ Stats    │  │ Models    │ │
-│   │  Versions    │  │  Stream    │  │ Paper     │  │ Export   │  │ Jobs      │ │
-│   └──────┬──────┘  └─────┬──────┘  └────┬──────┘  └────┬─────┘  └─────┬─────┘ │
-│          │               │               │              │               │        │
-│   ┌──────┴───────────────┴───────────────┴──────────────┴───────────────┴──────┐ │
-│   │                     REQUEST MIDDLEWARE                                      │ │
-│   │  Request ID · Structured Logging · Rate Limiting · Error Handling          │ │
-│   └────────────────────────────────────────────────────────────────────────────┘ │
-└──────────────────────────────────┬──────────────────────────────────────────────┘
-                                   │
-              ┌────────────────────┼────────────────────┐
-              │                    │                     │
-              ▼                    ▼                     ▼
-┌──────────────────┐  ┌─────────────────┐  ┌──────────────────────┐
-│  BUSINESS LOGIC  │  │  BACKGROUND     │  │  AI LAYER            │
-│                  │  │  WORKERS        │  │                      │
-│  Session Mgmt    │  │  (Celery)       │  │  Embeddings (BGE)    │
-│  Retrieval       │  │                 │  │  Reranker (BGE)      │
-│  Prompt Build    │  │  Ingest Doc     │  │  LLM Router          │
-│  Citation Format │  │  Extract Text   │  │    (LiteLLM)         │
-│  Feedback Store  │  │  Chunk          │  │  RAPTOR Tree Builder │
-│  Preference Pair │  │  Embed          │  │  LoRA Inference      │
-│                  │  │  Build Tree     │  │  DPO Fine-tuning     │
-│                  │  │  Index Vectors  │  │                      │
-│                  │  │  Fine-tune      │  │                      │
-│                  │  │  Evaluate       │  │                      │
-└────────┬─────────┘  └────────┬────────┘  └───────────┬──────────┘
-         │                     │                        │
-         ▼                     ▼                        ▼
-┌─────────────────────────────────────────────────────────────────────────────────┐
-│                         DATA LAYER                                               │
-│                                                                                  │
-│   ┌───────────────┐  ┌──────────────┐  ┌──────────┐  ┌──────────────────────┐  │
-│   │  PostgreSQL   │  │  Qdrant      │  │  Redis   │  │  MinIO / S3          │  │
-│   │  Port: 5432   │  │  Port: 6333  │  │  Port:   │  │  Port: 9000          │  │
-│   │               │  │              │  │  6379    │  │                      │  │
-│   │  • users      │  │  • vectors   │  │          │  │  • uploaded PDFs     │  │
-│   │  • workspaces │  │    (384-dim) │  │  • cache │  │  • processed files   │  │
-│   │  • collections│  │  • metadata  │  │  • queue │  │  • LoRA adapters     │  │
-│   │  • documents  │  │  • filtered  │  │    broker│  │  • RAPTOR tree files │  │
-│   │  • doc_vers.  │  │    search    │  │  • rate  │  │                      │  │
-│   │  • ingest_jobs│  │              │  │    limits│  │                      │  │
-│   │  • sessions   │  │              │  │  • locks │  │                      │  │
-│   │  • messages   │  │              │  │          │  │                      │  │
-│   │  • feedback   │  │              │  │          │  │                      │  │
-│   └───────────────┘  └──────────────┘  └──────────┘  └──────────────────────┘  │
-│                                                                                  │
-└─────────────────────────────────────────────────────────────────────────────────┘
-               │
-               ▼
-┌─────────────────────────────────────────────────────────────────────────────────┐
-│                         MONITORING / OPS                                          │
-│                                                                                  │
-│   ┌───────────────┐  ┌──────────────┐  ┌──────────────┐  ┌──────────────────┐  │
-│   │  Prometheus   │  │  Grafana     │  │  Sentry      │  │  GitHub Actions  │  │
-│   │  Metrics      │  │  Dashboards  │  │  Errors      │  │  CI/CD           │  │
-│   └───────────────┘  └──────────────┘  └──────────────┘  └──────────────────┘  │
-└─────────────────────────────────────────────────────────────────────────────────┘
+```mermaid
+flowchart TB
+    subgraph CLIENT["USER / CLIENT LAYER"]
+        FE["Next.js Frontend<br/>Auth · Upload · Chat · Citations · Feedback · Admin"]
+    end
+
+    subgraph EDGE["EDGE / SECURITY LAYER"]
+        LB["Cloud Load Balancer + HTTPS"]
+        AUTH["Auth Provider<br/>Clerk / Auth0 / Firebase Auth"]
+        RL["Rate Limiting · CORS · Audit Hooks"]
+    end
+
+    subgraph APP["APPLICATION LAYER — FastAPI on Cloud Run"]
+        API["FastAPI API"]
+        MODS["Auth Middleware · RBAC · Input Validation<br/>Session Service · Retrieval Orchestrator<br/>Prompt Builder · Citation Builder<br/>Model Router · Job Dispatcher · Audit Logger"]
+    end
+
+    subgraph PROCESSING["WORKER / PIPELINE LAYER"]
+        CELERY["Celery Workers"]
+        JOBS["validate → extract → normalize → chunk<br/>→ embed → RAPTOR tree → index<br/>eval · feedback · training"]
+    end
+
+    subgraph STORAGE["STORAGE LAYER"]
+        PG["PostgreSQL<br/>Cloud SQL"]
+        REDIS["Redis<br/>Memorystore"]
+        GCS["Google Cloud Storage"]
+        QDRANT["Qdrant / pgvector"]
+    end
+
+    subgraph AI["AI / KNOWLEDGE LAYER"]
+        EMB["Embedding Models<br/>SentenceTransformers / BGE"]
+        RERANK["Reranker<br/>BGE / cross-encoder"]
+        RAPTOR["RAPTOR Engine<br/>tree traversal · context assembly"]
+        LLM["LLM Routing — LiteLLM<br/>OpenAI · Anthropic · Groq · vLLM"]
+    end
+
+    subgraph OPS["OBSERVABILITY"]
+        LOG["Cloud Logging"]
+        MON["Cloud Monitoring"]
+        SENTRY["Sentry"]
+        OTEL["OpenTelemetry"]
+    end
+
+    FE -->|HTTPS + JWT| LB
+    LB --> AUTH
+    AUTH --> RL
+    RL --> API
+    API --- MODS
+    API --> PG
+    API --> REDIS
+    API --> GCS
+    API --> QDRANT
+    API -->|dispatch tasks| CELERY
+    CELERY --- JOBS
+    JOBS --> PG
+    JOBS --> GCS
+    JOBS --> QDRANT
+    JOBS --> EMB
+    JOBS --> RAPTOR
+    API --> EMB
+    API --> RERANK
+    API --> RAPTOR
+    API --> LLM
+    API --> LOG
+    API --> MON
+    API --> SENTRY
+    API --> OTEL
 ```
 
 ---
 
-## 2. Data Flow Diagrams
+## 2. Detailed Component Diagram
 
-### 2.1 Document Upload & Ingestion
+```mermaid
+flowchart LR
+    subgraph Users
+        IND["Individual Users"]
+        TEAM["Teams / Org Users"]
+        ADM["Admins"]
+    end
 
-```
-User                   API                    Worker                 Storage
- │                      │                       │                      │
- │── POST /documents ──▶│                       │                      │
- │   (file + metadata)  │                       │                      │
- │                      │── Save file ─────────────────────────────────▶│ MinIO
- │                      │                       │                      │
- │                      │── INSERT documents ──────────────────────────▶│ Postgres
- │                      │── INSERT ingest_jobs ────────────────────────▶│ Postgres
- │                      │                       │                      │
- │                      │── dispatch task ─────▶│                      │
- │                      │                       │                      │
- │◀── 202 Accepted ────│                       │                      │
- │    {job_id, status}  │                       │                      │
- │                      │                       │── GET file ─────────▶│ MinIO
- │                      │                       │◀── file bytes ──────│
- │                      │                       │                      │
- │                      │                       │── extract text       │
- │                      │                       │── chunk (300-500 tok)│
- │                      │                       │── embed (BGE 384-d) │
- │                      │                       │                      │
- │                      │                       │── build RAPTOR tree  │
- │                      │                       │   (cluster sections, │
- │                      │                       │    generate summaries)│
- │                      │                       │                      │
- │                      │                       │── upsert vectors ───▶│ Qdrant
- │                      │                       │── save tree file ───▶│ MinIO
- │                      │                       │── UPDATE job status ─▶│ Postgres
- │                      │                       │   (status=completed)  │
- │                      │                       │                      │
- │── GET /documents     │                       │                      │
- │   /{id}/status ─────▶│── SELECT job ────────────────────────────────▶│ Postgres
- │◀── {status: done} ──│                       │                      │
-```
+    subgraph Frontend["Next.js Frontend"]
+        LOGIN["Login / Signup"]
+        DASH["Workspace Dashboard"]
+        COLL["Collection Management"]
+        UPLOAD["Document Upload"]
+        STATUS["Ingestion Status"]
+        CHAT["Chat Interface"]
+        CITE["Citation Panel"]
+        FB["Feedback Actions"]
+        ADMIN["Admin / Ops Screens"]
+    end
 
-### 2.2 Chat / Query Flow
+    subgraph AuthProv["Auth Provider — Clerk / Auth0"]
+        IDENT["User Identity"]
+        SESS["Session Handling"]
+        JWT["JWT Issuance"]
+        ROLES["Role Metadata"]
+    end
 
-```
-User                   API                  Retriever              LLM              Storage
- │                      │                      │                    │                 │
- │── POST /chat ───────▶│                      │                    │                 │
- │   {message, session} │                      │                    │                 │
- │                      │── get/create session ──────────────────────────────────────▶│ Postgres
- │                      │── store user msg ──────────────────────────────────────────▶│ Postgres
- │                      │                      │                    │                 │
- │                      │── retrieve(query) ──▶│                    │                 │
- │                      │                      │── embed query      │                 │
- │                      │                      │── vector search ──────────────────── ▶│ Qdrant
- │                      │                      │◀── top-k chunks ──────────────────── │
- │                      │                      │── load RAPTOR tree ────────────────── ▶│ Redis/S3
- │                      │                      │── walk up tree     │                 │
- │                      │                      │   (chunk→section   │                 │
- │                      │                      │    →topic→paper)   │                 │
- │                      │◀── enriched chunks ──│                    │                 │
- │                      │                      │                    │                 │
- │                      │── build prompt ──────────────────────────▶│                 │
- │                      │   (system + context                       │                 │
- │                      │    + history + question)                  │                 │
- │                      │                                           │                 │
- │                      │── LLM inference ─────────────────────────▶│                 │
- │                      │   (LiteLLM router:                        │                 │
- │                      │    Ollama / Groq /                        │                 │
- │                      │    LoRA adapter)                          │                 │
- │                      │◀── answer ───────────────────────────────│                 │
- │                      │                                           │                 │
- │                      │── store assistant msg ─────────────────────────────────────▶│ Postgres
- │                      │                                           │                 │
- │◀── {answer,          │                                           │                 │
- │     citations,       │                                           │                 │
- │     session_id} ────│                                           │                 │
-```
+    subgraph FastAPI["FastAPI API — Cloud Run"]
+        direction TB
+        APIS["/auth /users /workspaces /collections<br/>/documents /ingestion /chat /retrieve<br/>/generate /feedback /eval /admin"]
+        SVC["Auth MW · RBAC · Validation<br/>Session Svc · Retrieval Orchestrator<br/>Prompt Builder · Citation Builder<br/>Model Router · Job Dispatcher · Audit Logger"]
+    end
 
-### 2.3 Feedback → Fine-tuning Loop
+    subgraph DataStores
+        PG2["PostgreSQL / Cloud SQL<br/>users · workspaces · collections<br/>documents · chunks_metadata · tree_nodes<br/>ingestion_jobs · sessions · messages<br/>feedback · eval_runs · audit_logs<br/>model_registry"]
+        REDIS2["Redis / Memorystore<br/>Celery queue · cache<br/>rate limits · session cache"]
+        GCS2["GCS<br/>raw files · extracted text · cleaned text<br/>RAPTOR trees · chunk exports<br/>eval outputs · model artifacts · backups"]
+        VEC["Qdrant / pgvector<br/>chunk embeddings · metadata<br/>filtered search · similarity"]
+    end
 
-```
-User                   API                  Worker                 Storage
- │                      │                      │                     │
- │── POST /feedback ───▶│                      │                     │
- │   {msg_id, type,     │                      │                     │
- │    correction}       │── INSERT feedback ──────────────────────── ▶│ Postgres
- │                      │── build pref pair ──────────────────────── ▶│ Postgres
- │◀── {ok} ────────────│                      │                     │
- │                      │                      │                     │
- │                      │── check threshold    │                     │
- │                      │   (>= min_feedback?) │                     │
- │                      │                      │                     │
- │                      │── dispatch finetune ▶│                     │
- │                      │                      │── load pref pairs ──▶│ Postgres
- │                      │                      │── load base model   │
- │                      │                      │   (4-bit quantized) │
- │                      │                      │── apply LoRA config │
- │                      │                      │── DPO training      │
- │                      │                      │   (TRL DPOTrainer)  │
- │                      │                      │── save adapter ────▶│ MinIO
- │                      │                      │── register model ──▶│ Postgres
- │                      │                      │                     │
- │                      │                      │ Next query auto-    │
- │                      │                      │ selects best model  │
+    subgraph Workers["Celery Workers"]
+        W1["1. validate document"]
+        W2["2. fetch raw file"]
+        W3["3. extract text"]
+        W4["4. normalize / clean"]
+        W5["5. create chunks"]
+        W6["6. create embeddings"]
+        W7["7. build RAPTOR tree"]
+        W8["8. store vector index"]
+        W9["9. save tree artifacts"]
+        W10["10. update status"]
+        W11["11. eval / feedback processing"]
+    end
+
+    subgraph Intelligence["AI / Knowledge Layer"]
+        EMB2["Embedding Model"]
+        RR["Reranker"]
+        RAPT["RAPTOR Traversal<br/>chunk→section→topic→document"]
+        LITELLM["LiteLLM Router<br/>OpenAI · Anthropic · Groq · vLLM"]
+    end
+
+    Users --> Frontend
+    Frontend -->|JWT| AuthProv
+    AuthProv --> FastAPI
+    FastAPI --> DataStores
+    FastAPI -->|dispatch| Workers
+    Workers --> DataStores
+    Workers --> Intelligence
+    FastAPI --> Intelligence
+    Intelligence -->|answer + citations| FastAPI
 ```
 
 ---
 
-## 3. Database Schema
+## 3. Sequence Diagram — Document Upload + Ingestion
+
+```mermaid
+sequenceDiagram
+    participant U as User
+    participant FE as Frontend
+    participant AUTH as Auth Provider
+    participant API as FastAPI
+    participant PG as PostgreSQL
+    participant GCS as GCS
+    participant Q as Redis/Celery
+    participant W as Worker
+    participant EMB as Embedding Model
+    participant VDB as Qdrant
+
+    U->>FE: Upload document
+    FE->>AUTH: Validate JWT
+    AUTH-->>FE: Valid
+    FE->>API: POST /documents (file + metadata)
+    API->>API: Validate auth + file type/size
+    API->>PG: Insert document record (status=processing)
+    API->>GCS: Upload raw file
+    API->>PG: Create ingestion_job (status=pending)
+    API->>Q: Dispatch ingestion task
+    API-->>FE: 201 Created (document_id, job_id)
+
+    Q->>W: Pick up task
+    W->>GCS: Download raw file
+    W->>W: Extract text
+    W->>W: Normalize / clean
+    W->>W: Chunk text
+    W->>EMB: Generate embeddings
+    W->>W: Build RAPTOR tree
+    W->>VDB: Upsert vectors
+    W->>GCS: Save tree artifacts
+    W->>PG: Update job status=completed
+    W->>PG: Update document status=ready
+```
+
+---
+
+## 4. Sequence Diagram — Chat / Query Flow
+
+```mermaid
+sequenceDiagram
+    participant U as User
+    participant FE as Frontend
+    participant API as FastAPI
+    participant PG as PostgreSQL
+    participant EMB as Embedding Model
+    participant VDB as Qdrant
+    participant RR as Reranker
+    participant RAPT as RAPTOR Engine
+    participant LLM as LLM Provider
+
+    U->>FE: Ask question
+    FE->>API: POST /chat/sessions/{id}/messages
+    API->>PG: Store user message
+    API->>EMB: Generate query embedding
+    API->>VDB: Semantic search (top_k chunks)
+    VDB-->>API: Candidate chunks
+    API->>RR: Rerank chunks
+    RR-->>API: Reranked chunks
+    API->>RAPT: Traverse RAPTOR hierarchy
+    RAPT-->>API: Context (chunk→section→topic→doc)
+    API->>API: Build prompt (context + history)
+    API->>LLM: Generate answer
+    LLM-->>API: Grounded response
+    API->>API: Extract citations
+    API->>PG: Store assistant message + metadata
+    API-->>FE: Answer + citations + model info
+    FE->>U: Display answer + source panel
+```
+
+---
+
+## 5. Feedback / Improvement Loop
+
+```mermaid
+sequenceDiagram
+    participant U as User
+    participant FE as Frontend
+    participant API as FastAPI
+    participant PG as PostgreSQL
+    participant W as Worker
+
+    U->>FE: Rate response (1-5) + comment
+    FE->>API: POST /feedback
+    API->>PG: Store feedback
+    API-->>FE: 201 OK
+
+    Note over W,PG: Periodic batch job
+    W->>PG: Fetch low-rated feedback
+    W->>W: Generate preference pairs
+    W->>PG: Store preference_pairs
+    W->>W: Run eval pipeline
+    W->>PG: Store eval_run results
+```
+
+---
+
+## 6. Database Schema
+
+### Tables
 
 ```sql
--- Core multi-tenancy
+-- Identity
 CREATE TABLE users (
-    id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    clerk_id        VARCHAR(255) UNIQUE NOT NULL,
-    email           VARCHAR(255) UNIQUE NOT NULL,
-    display_name    VARCHAR(255),
-    role            VARCHAR(50) DEFAULT 'user',  -- admin, user, viewer
-    created_at      TIMESTAMPTZ DEFAULT NOW(),
-    updated_at      TIMESTAMPTZ DEFAULT NOW()
+    id            UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    clerk_id      TEXT UNIQUE NOT NULL,
+    email         TEXT UNIQUE NOT NULL,
+    display_name  TEXT,
+    role          TEXT DEFAULT 'user',
+    created_at    TIMESTAMPTZ DEFAULT NOW(),
+    updated_at    TIMESTAMPTZ DEFAULT NOW()
 );
 
+-- Multi-tenancy
 CREATE TABLE workspaces (
-    id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    name            VARCHAR(255) NOT NULL,
-    owner_id        UUID REFERENCES users(id) ON DELETE CASCADE,
-    settings        JSONB DEFAULT '{}',
-    created_at      TIMESTAMPTZ DEFAULT NOW(),
-    updated_at      TIMESTAMPTZ DEFAULT NOW()
+    id         UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    name       TEXT NOT NULL,
+    owner_id   UUID REFERENCES users(id) ON DELETE CASCADE,
+    settings   JSONB DEFAULT '{}',
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    updated_at TIMESTAMPTZ DEFAULT NOW()
 );
 
 CREATE TABLE workspace_members (
-    workspace_id    UUID REFERENCES workspaces(id) ON DELETE CASCADE,
-    user_id         UUID REFERENCES users(id) ON DELETE CASCADE,
-    role            VARCHAR(50) DEFAULT 'member',  -- owner, admin, member, viewer
-    joined_at       TIMESTAMPTZ DEFAULT NOW(),
+    workspace_id UUID REFERENCES workspaces(id) ON DELETE CASCADE,
+    user_id      UUID REFERENCES users(id) ON DELETE CASCADE,
+    role         TEXT DEFAULT 'member',
+    joined_at    TIMESTAMPTZ DEFAULT NOW(),
     PRIMARY KEY (workspace_id, user_id)
 );
 
--- Document management
+-- Knowledge organization
 CREATE TABLE collections (
-    id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    workspace_id    UUID REFERENCES workspaces(id) ON DELETE CASCADE,
-    name            VARCHAR(255) NOT NULL,
-    description     TEXT,
-    settings        JSONB DEFAULT '{}',
-    created_at      TIMESTAMPTZ DEFAULT NOW(),
-    updated_at      TIMESTAMPTZ DEFAULT NOW()
+    id           UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    workspace_id UUID REFERENCES workspaces(id) ON DELETE CASCADE,
+    name         TEXT NOT NULL,
+    description  TEXT,
+    settings     JSONB DEFAULT '{}',
+    created_at   TIMESTAMPTZ DEFAULT NOW(),
+    updated_at   TIMESTAMPTZ DEFAULT NOW()
 );
 
+-- Documents
 CREATE TABLE documents (
     id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     collection_id   UUID REFERENCES collections(id) ON DELETE CASCADE,
-    filename        VARCHAR(500) NOT NULL,
-    content_type    VARCHAR(100),
+    filename        TEXT NOT NULL,
+    content_type    TEXT NOT NULL,
     file_size_bytes BIGINT,
-    s3_key          VARCHAR(1000),
+    storage_key     TEXT NOT NULL,
     metadata        JSONB DEFAULT '{}',
-    status          VARCHAR(50) DEFAULT 'uploaded',  -- uploaded, processing, indexed, failed
+    status          TEXT DEFAULT 'uploaded',
     created_at      TIMESTAMPTZ DEFAULT NOW(),
     updated_at      TIMESTAMPTZ DEFAULT NOW()
 );
 
 CREATE TABLE document_versions (
+    id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    document_id UUID REFERENCES documents(id) ON DELETE CASCADE,
+    version     INT NOT NULL,
+    storage_key TEXT NOT NULL,
+    chunk_count INT,
+    created_at  TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- Chunk & tree metadata
+CREATE TABLE chunks_metadata (
+    id            UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    document_id   UUID REFERENCES documents(id) ON DELETE CASCADE,
+    collection_id UUID REFERENCES collections(id) ON DELETE CASCADE,
+    chunk_index   INT NOT NULL,
+    text_hash     TEXT NOT NULL,
+    word_start    INT,
+    word_end      INT,
+    page_number   INT,
+    section_title TEXT,
+    vector_id     TEXT,
+    created_at    TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE TABLE tree_nodes (
     id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    collection_id   UUID REFERENCES collections(id) ON DELETE CASCADE,
     document_id     UUID REFERENCES documents(id) ON DELETE CASCADE,
-    version         INTEGER NOT NULL DEFAULT 1,
-    s3_key          VARCHAR(1000),
-    chunk_count     INTEGER,
-    created_at      TIMESTAMPTZ DEFAULT NOW()
-);
-
--- Ingestion pipeline
-CREATE TABLE ingestion_jobs (
-    id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    document_id     UUID REFERENCES documents(id) ON DELETE CASCADE,
-    status          VARCHAR(50) DEFAULT 'pending',
-    -- pending → validating → extracting → chunking → embedding → tree_building → indexing → completed / failed
-    current_stage   VARCHAR(50),
-    progress_pct    SMALLINT DEFAULT 0,
-    chunk_count     INTEGER,
-    error_message   TEXT,
-    started_at      TIMESTAMPTZ,
-    completed_at    TIMESTAMPTZ,
-    created_at      TIMESTAMPTZ DEFAULT NOW()
-);
-
--- Chat
-CREATE TABLE chat_sessions (
-    id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    workspace_id    UUID REFERENCES workspaces(id) ON DELETE CASCADE,
-    user_id         UUID REFERENCES users(id) ON DELETE CASCADE,
-    collection_id   UUID REFERENCES collections(id),  -- optional: scope to a collection
-    title           VARCHAR(500),
-    settings        JSONB DEFAULT '{}',  -- model, top_k, task, etc.
-    created_at      TIMESTAMPTZ DEFAULT NOW(),
-    updated_at      TIMESTAMPTZ DEFAULT NOW()
-);
-
-CREATE TABLE chat_messages (
-    id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    session_id      UUID REFERENCES chat_sessions(id) ON DELETE CASCADE,
-    role            VARCHAR(20) NOT NULL,  -- user, assistant, system
-    content         TEXT NOT NULL,
-    citations       JSONB DEFAULT '[]',
-    model_used      VARCHAR(255),
-    latency_ms      INTEGER,
-    token_count     INTEGER,
-    created_at      TIMESTAMPTZ DEFAULT NOW()
-);
-
--- Feedback & learning
-CREATE TABLE feedback (
-    id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    message_id      UUID REFERENCES chat_messages(id) ON DELETE CASCADE,
-    user_id         UUID REFERENCES users(id),
-    feedback_type   VARCHAR(50) NOT NULL,
-    -- helpful, incorrect, hallucination, correction
-    correction_text TEXT,
+    parent_id       UUID REFERENCES tree_nodes(id) ON DELETE SET NULL,
+    node_type       TEXT NOT NULL,  -- 'document', 'topic', 'section', 'chunk'
+    level           INT NOT NULL DEFAULT 0,
+    label           TEXT,
+    summary         TEXT,
+    vector_id       TEXT,
+    children_count  INT DEFAULT 0,
     metadata        JSONB DEFAULT '{}',
     created_at      TIMESTAMPTZ DEFAULT NOW()
 );
 
+-- Processing
+CREATE TABLE ingestion_jobs (
+    id            UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    document_id   UUID REFERENCES documents(id) ON DELETE CASCADE,
+    status        TEXT DEFAULT 'pending',
+    current_stage TEXT,
+    progress_pct  SMALLINT DEFAULT 0,
+    chunk_count   INT,
+    error_message TEXT,
+    started_at    TIMESTAMPTZ,
+    completed_at  TIMESTAMPTZ,
+    created_at    TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- Chat
+CREATE TABLE chat_sessions (
+    id            UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    user_id       UUID REFERENCES users(id) ON DELETE CASCADE,
+    collection_id UUID REFERENCES collections(id) ON DELETE CASCADE,
+    title         TEXT,
+    created_at    TIMESTAMPTZ DEFAULT NOW(),
+    updated_at    TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE TABLE chat_messages (
+    id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    session_id  UUID REFERENCES chat_sessions(id) ON DELETE CASCADE,
+    role        TEXT NOT NULL,
+    content     TEXT NOT NULL,
+    citations   JSONB,
+    model_used  TEXT,
+    latency_ms  INT,
+    token_count INT,
+    created_at  TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- Feedback
+CREATE TABLE feedback (
+    id         UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    message_id UUID UNIQUE REFERENCES chat_messages(id) ON DELETE CASCADE,
+    rating     SMALLINT NOT NULL CHECK (rating BETWEEN 1 AND 5),
+    comment    TEXT,
+    created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
 CREATE TABLE preference_pairs (
-    id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    feedback_id     UUID REFERENCES feedback(id),
-    prompt          TEXT NOT NULL,
-    chosen          TEXT NOT NULL,
-    rejected        TEXT NOT NULL,
-    created_at      TIMESTAMPTZ DEFAULT NOW()
+    id       UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    prompt   TEXT NOT NULL,
+    chosen   TEXT NOT NULL,
+    rejected TEXT NOT NULL,
+    source   TEXT,
+    created_at TIMESTAMPTZ DEFAULT NOW()
 );
 
+-- Training
 CREATE TABLE training_runs (
-    id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    workspace_id    UUID REFERENCES workspaces(id),
-    model_name      VARCHAR(255),
-    base_model      VARCHAR(255),
-    method          VARCHAR(50) DEFAULT 'dpo',
-    status          VARCHAR(50) DEFAULT 'pending',
-    pair_count      INTEGER,
-    metrics         JSONB DEFAULT '{}',
-    adapter_s3_key  VARCHAR(1000),
-    started_at      TIMESTAMPTZ,
-    completed_at    TIMESTAMPTZ,
-    created_at      TIMESTAMPTZ DEFAULT NOW()
+    id             UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    run_type       TEXT NOT NULL,
+    status         TEXT DEFAULT 'pending',
+    base_model     TEXT NOT NULL,
+    pair_count     INT,
+    epochs         INT,
+    metrics        JSONB,
+    adapter_s3_key TEXT,
+    error_message  TEXT,
+    started_at     TIMESTAMPTZ,
+    completed_at   TIMESTAMPTZ,
+    created_at     TIMESTAMPTZ DEFAULT NOW()
 );
 
--- Indexes
-CREATE INDEX idx_documents_collection ON documents(collection_id);
-CREATE INDEX idx_documents_status ON documents(status);
-CREATE INDEX idx_ingestion_jobs_document ON ingestion_jobs(document_id);
-CREATE INDEX idx_ingestion_jobs_status ON ingestion_jobs(status);
-CREATE INDEX idx_chat_sessions_workspace ON chat_sessions(workspace_id);
-CREATE INDEX idx_chat_sessions_user ON chat_sessions(user_id);
-CREATE INDEX idx_chat_messages_session ON chat_messages(session_id);
-CREATE INDEX idx_feedback_message ON feedback(message_id);
-CREATE INDEX idx_feedback_type ON feedback(feedback_type);
-CREATE INDEX idx_preference_pairs_feedback ON preference_pairs(feedback_id);
-CREATE INDEX idx_training_runs_workspace ON training_runs(workspace_id);
+-- Evaluation
+CREATE TABLE eval_runs (
+    id            UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    collection_id UUID REFERENCES collections(id) ON DELETE SET NULL,
+    eval_type     TEXT NOT NULL,
+    status        TEXT DEFAULT 'pending',
+    config        JSONB DEFAULT '{}',
+    results       JSONB,
+    error_message TEXT,
+    started_at    TIMESTAMPTZ,
+    completed_at  TIMESTAMPTZ,
+    created_at    TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- Operations
+CREATE TABLE model_registry (
+    id           UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    name         TEXT NOT NULL,
+    version      TEXT NOT NULL,
+    model_type   TEXT NOT NULL,
+    storage_key  TEXT,
+    metrics      JSONB,
+    is_active    BOOLEAN DEFAULT FALSE,
+    created_at   TIMESTAMPTZ DEFAULT NOW(),
+    UNIQUE(name, version)
+);
+
+CREATE TABLE audit_logs (
+    id         UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    user_id    UUID REFERENCES users(id) ON DELETE SET NULL,
+    action     TEXT NOT NULL,
+    resource   TEXT NOT NULL,
+    resource_id UUID,
+    details    JSONB,
+    ip_address TEXT,
+    created_at TIMESTAMPTZ DEFAULT NOW()
+);
 ```
 
 ---
 
-## 4. New Project Structure
+## 7. Storage System Responsibilities
 
+### PostgreSQL (Cloud SQL)
+Structured app data:
+- Users, workspaces, collections
+- Document metadata and processing state
+- Chunk metadata and tree node references
+- Chat sessions and messages
+- Feedback and preference pairs
+- Evaluations and training runs
+- Audit logs and model registry
+
+### Qdrant / pgvector
+Vector embeddings:
+- Chunk embeddings per collection
+- Top-k similarity retrieval
+- Metadata-filtered search (by document, collection, type)
+
+### Google Cloud Storage (GCS)
+Object/file storage:
+- Original file uploads
+- Extracted and cleaned text
+- RAPTOR tree JSON artifacts
+- Chunk exports
+- Evaluation outputs
+- Model artifacts/checkpoints
+- Backups and snapshots
+
+### Redis (Memorystore)
+Ephemeral / queue:
+- Celery task queue + retry queue
+- Response caching
+- Rate-limit counters
+- Temporary session data
+
+---
+
+## 8. API Surface (v2)
+
+| Group | Endpoint | Method | Description |
+|-------|----------|--------|-------------|
+| **Health** | `/api/v2/health/live` | GET | Liveness probe |
+| | `/api/v2/health/ready` | GET | Readiness probe (all backends) |
+| **Auth** | `/api/v2/auth/webhook` | POST | Clerk webhook (user sync) |
+| | `/api/v2/auth/me` | GET | Current user profile |
+| **Users** | `/api/v2/users/{id}` | GET | User profile |
+| **Workspaces** | `/api/v2/workspaces` | POST/GET | Create / list workspaces |
+| | `/api/v2/workspaces/{id}` | GET/DELETE | Get / delete workspace |
+| **Collections** | `/api/v2/workspaces/{wid}/collections` | POST/GET | Create / list |
+| | `/api/v2/workspaces/{wid}/collections/{cid}` | GET/DELETE | Get / delete |
+| **Documents** | `/api/v2/collections/{cid}/documents` | POST/GET | Upload / list |
+| | `/api/v2/collections/{cid}/documents/{did}` | GET/DELETE | Get / delete |
+| | `/api/v2/collections/{cid}/documents/{did}/status` | GET | Ingestion status |
+| **Chat** | `/api/v2/chat/sessions` | POST/GET | Create / list sessions |
+| | `/api/v2/chat/sessions/{sid}` | GET/DELETE | Get / delete session |
+| | `/api/v2/chat/sessions/{sid}/messages` | POST | Send message (RAG) |
+| **Retrieve** | `/api/v2/retrieve` | POST | Standalone semantic search |
+| **Generate** | `/api/v2/generate` | POST | Standalone generation (context + LLM) |
+| **Feedback** | `/api/v2/feedback` | POST/GET | Submit / list feedback |
+| **Training** | `/api/v2/training/runs` | POST/GET | Start / list training runs |
+| | `/api/v2/training/runs/{rid}` | GET | Training run details |
+| **Eval** | `/api/v2/eval/runs` | POST/GET | Start / list eval runs |
+| | `/api/v2/eval/runs/{rid}` | GET | Eval run details |
+| **Admin** | `/api/v2/admin/stats` | GET | Platform statistics |
+| | `/api/v2/admin/models` | GET/POST | Model registry |
+| | `/api/v2/admin/audit-logs` | GET | Audit log viewer |
+
+---
+
+## 9. Architecture Zones (for diagramming)
+
+| Zone | Components |
+|------|------------|
+| **1. Client** | Next.js, Upload UI, Chat UI, Citation Panel, Feedback Panel, Admin Dashboard |
+| **2. Security / Edge** | Clerk/Auth0, JWT validation, RBAC, Rate limiting, Audit logging, CORS |
+| **3. Application** | FastAPI API, Session management, Document APIs, Retrieval APIs, Generation APIs, Feedback APIs, Admin APIs |
+| **4. Processing** | Celery workers, Async ingestion, Parsing, Chunking, Embedding, RAPTOR tree generation, Reindexing, Batch eval |
+| **5. Storage** | PostgreSQL (metadata), Qdrant/pgvector (vectors), GCS (files), Redis (queue/cache) |
+| **6. Operations** | Cloud Logging, Cloud Monitoring, Sentry, OpenTelemetry, Alerts, Backups, CI/CD, Secret management |
+
+---
+
+## 10. Key Data Flows
+
+### Ingestion Path
 ```
-raptor-research-assistant/
-├── docker-compose.yml
-├── Dockerfile
-├── Dockerfile.worker
-├── .env.example
-├── .env
-├── .gitignore
-├── pyproject.toml
-├── alembic.ini
-├── README.md
-├── ARCHITECTURE.md
-├── PROJECT_ROADMAP.md
-├── IMPLEMENTATION_PLAN.md
-│
-├── alembic/
-│   ├── env.py
-│   ├── script.py.mako
-│   └── versions/
-│       └── 001_initial_schema.py
-│
-├── app/
-│   ├── __init__.py
-│   ├── main.py                    # FastAPI app factory
-│   │
-│   ├── api/
-│   │   ├── __init__.py
-│   │   ├── deps.py                # Dependency injection (db session, current_user)
-│   │   ├── middleware.py           # Request ID, logging, rate limit
-│   │   ├── routes/
-│   │   │   ├── __init__.py
-│   │   │   ├── auth.py            # Clerk webhook, user sync
-│   │   │   ├── chat.py            # Chat sessions + messages
-│   │   │   ├── documents.py       # Upload, list, status
-│   │   │   ├── retrieve.py        # Search + tree browsing
-│   │   │   ├── feedback.py        # Submit + query feedback
-│   │   │   ├── train.py           # Fine-tuning + learning loop
-│   │   │   ├── eval.py            # RAGAS evaluation
-│   │   │   ├── admin.py           # System config, models, jobs
-│   │   │   └── health.py          # /health/live, /health/ready
-│   │   └── schemas/
-│   │       ├── __init__.py
-│   │       ├── auth.py
-│   │       ├── chat.py
-│   │       ├── documents.py
-│   │       ├── feedback.py
-│   │       └── common.py
-│   │
-│   ├── core/
-│   │   ├── __init__.py
-│   │   ├── config.py              # Settings from env vars (Pydantic BaseSettings)
-│   │   ├── security.py            # Clerk JWT verification
-│   │   ├── exceptions.py          # Custom exception classes
-│   │   └── logging.py             # Structured JSON logging setup
-│   │
-│   ├── db/
-│   │   ├── __init__.py
-│   │   ├── session.py             # SQLAlchemy engine + session factory
-│   │   ├── base.py                # Declarative base
-│   │   └── models/
-│   │       ├── __init__.py
-│   │       ├── user.py
-│   │       ├── workspace.py
-│   │       ├── collection.py
-│   │       ├── document.py
-│   │       ├── ingestion_job.py
-│   │       ├── chat.py
-│   │       ├── feedback.py
-│   │       └── training.py
-│   │
-│   ├── services/
-│   │   ├── __init__.py
-│   │   ├── document_service.py    # Upload, versioning, status
-│   │   ├── chat_service.py        # Session + message management
-│   │   ├── retrieval_service.py   # Hybrid retrieval orchestration
-│   │   ├── feedback_service.py    # Feedback + preference pairs
-│   │   ├── training_service.py    # Fine-tuning orchestration
-│   │   └── eval_service.py        # Evaluation orchestration
-│   │
-│   ├── ai/
-│   │   ├── __init__.py
-│   │   ├── embeddings.py          # SentenceTransformers / BGE
-│   │   ├── reranker.py            # BGE reranker
-│   │   ├── llm_router.py          # LiteLLM routing
-│   │   ├── prompt_builder.py      # Prompt construction
-│   │   ├── raptor/
-│   │   │   ├── __init__.py
-│   │   │   ├── tree_builder.py    # Build RAPTOR trees
-│   │   │   ├── tree_index.py      # Load/traverse trees
-│   │   │   └── clustering.py      # Topic clustering
-│   │   └── finetuning/
-│   │       ├── __init__.py
-│   │       ├── dpo_trainer.py     # DPO training logic
-│   │       └── lora_inference.py  # LoRA adapter inference
-│   │
-│   ├── storage/
-│   │   ├── __init__.py
-│   │   ├── s3_client.py           # MinIO / S3 operations
-│   │   ├── vector_store.py        # Qdrant operations
-│   │   └── cache.py               # Redis caching
-│   │
-│   └── workers/
-│       ├── __init__.py
-│       ├── celery_app.py          # Celery configuration
-│       ├── tasks/
-│       │   ├── __init__.py
-│       │   ├── ingest.py          # Document ingestion pipeline
-│       │   ├── finetune.py        # Model fine-tuning
-│       │   └── evaluate.py        # Background evaluation
-│       └── pipeline/
-│           ├── __init__.py
-│           ├── extract.py         # Text extraction (PDF, DOCX, TXT)
-│           ├── chunk.py           # Text chunking
-│           ├── embed.py           # Embedding generation
-│           └── index.py           # Vector indexing
-│
-├── frontend/                       # Next.js app (separate)
-│   ├── package.json
-│   ├── next.config.js
-│   ├── tailwind.config.js
-│   ├── tsconfig.json
-│   ├── src/
-│   │   ├── app/
-│   │   │   ├── layout.tsx
-│   │   │   ├── page.tsx
-│   │   │   ├── chat/
-│   │   │   ├── documents/
-│   │   │   ├── collections/
-│   │   │   └── admin/
-│   │   ├── components/
-│   │   │   ├── ui/               # shadcn components
-│   │   │   ├── chat/
-│   │   │   ├── documents/
-│   │   │   └── layout/
-│   │   ├── lib/
-│   │   │   ├── api.ts            # API client
-│   │   │   └── utils.ts
-│   │   └── hooks/
-│   │       ├── useChat.ts
-│   │       └── useDocuments.ts
-│   └── public/
-│
-├── tests/
-│   ├── conftest.py
-│   ├── unit/
-│   │   ├── test_services/
-│   │   ├── test_ai/
-│   │   └── test_workers/
-│   ├── integration/
-│   │   ├── test_api/
-│   │   ├── test_db/
-│   │   └── test_storage/
-│   └── e2e/
-│       └── test_full_pipeline.py
-│
-├── scripts/
-│   ├── seed_db.py
-│   ├── migrate_from_v1.py        # Migrate existing ChromaDB data
-│   └── benchmark.py
-│
-└── docs/
-    ├── api.md
-    ├── deployment.md
-    └── development.md
+User upload → FastAPI → GCS (raw) + Postgres (metadata)
+  → Redis/Celery → Worker: parse → normalize → chunk → embed → RAPTOR tree
+  → Qdrant (vectors) + GCS (artifacts) + Postgres (status)
+```
+
+### Query Path
+```
+User question → FastAPI → Embedding model → Qdrant (top-k)
+  → Reranker → RAPTOR traversal (chunk→section→topic→doc)
+  → LiteLLM/LLM → Answer + citations → Frontend
+```
+
+### Improvement Path
+```
+User feedback → Postgres → Eval/review pipeline → Preference pairs
+  → Training run (DPO/SFT) → Model registry → Active model update
 ```
 
 ---
 
-## 5. Component Specifications
-
-### 5.1 FastAPI Backend
-
-| Component | Technology | Notes |
-|-----------|-----------|-------|
-| Framework | FastAPI 0.110+ | Async, OpenAPI docs |
-| Validation | Pydantic v2 | Request/response models |
-| Auth middleware | Clerk SDK | JWT verification on every request |
-| Rate limiting | Redis + `slowapi` | Per-user, per-endpoint limits |
-| Request ID | UUID4 middleware | Propagated in logs and responses |
-| Error handling | Custom exception handlers | Consistent error response format |
-| CORS | FastAPI CORS middleware | Allow frontend origin |
-
-### 5.2 Database (PostgreSQL)
-
-| Aspect | Detail |
-|--------|--------|
-| ORM | SQLAlchemy 2.0 (async) |
-| Migrations | Alembic |
-| Connection pool | `asyncpg` driver, pool size 20 |
-| Naming convention | snake_case tables, UUID primary keys |
-| Soft deletes | `deleted_at` column where needed |
-| Audit | `created_at`, `updated_at` on all tables |
-
-### 5.3 Vector Database (Qdrant)
-
-| Aspect | Detail |
-|--------|--------|
-| Dimensions | 384 (all-MiniLM-L6-v2) or 768 (BGE-base) |
-| Distance metric | Cosine |
-| Collections | One per workspace-collection pair |
-| Payload filtering | `document_id`, `section`, `topic` |
-| Replication | Single node for dev, replicated for prod |
-
-### 5.4 Object Storage (MinIO / S3)
-
-| Bucket | Contents |
-|--------|----------|
-| `raptor-documents` | Uploaded files (PDFs, DOCX, TXT) |
-| `raptor-trees` | Serialized RAPTOR tree files |
-| `raptor-models` | LoRA adapter weights |
-
-### 5.5 Background Workers (Celery)
-
-| Queue | Tasks |
-|-------|-------|
-| `ingest` | Document ingestion pipeline |
-| `train` | DPO fine-tuning runs |
-| `eval` | Background evaluation jobs |
-| `default` | Misc tasks |
-
-### 5.6 Cache (Redis)
-
-| Purpose | TTL | Key Pattern |
-|---------|-----|-------------|
-| Session cache | 24h | `session:{id}` |
-| RAPTOR tree cache | 1h | `tree:{doc_id}` |
-| Rate limit counters | 1min | `rl:{user_id}:{endpoint}` |
-| Job status | 30min | `job:{id}:status` |
-| Celery broker | N/A | Celery internal |
-
----
-
-## 6. API Design
-
-### Base URL: `/api/v1`
-
-| Group | Endpoint | Method | Auth | Description |
-|-------|---------|--------|------|-------------|
-| **Health** | `/health/live` | GET | No | Process alive |
-| | `/health/ready` | GET | No | Dependencies ready |
-| **Auth** | `/auth/webhook` | POST | Clerk | User sync from Clerk |
-| **Workspaces** | `/workspaces` | GET | Yes | List user's workspaces |
-| | `/workspaces` | POST | Yes | Create workspace |
-| | `/workspaces/{id}` | GET | Yes | Get workspace |
-| **Collections** | `/workspaces/{wid}/collections` | GET | Yes | List collections |
-| | `/workspaces/{wid}/collections` | POST | Yes | Create collection |
-| **Documents** | `/collections/{cid}/documents` | POST | Yes | Upload document |
-| | `/collections/{cid}/documents` | GET | Yes | List documents |
-| | `/documents/{id}` | GET | Yes | Document details + status |
-| | `/documents/{id}/status` | GET | Yes | Ingestion job status |
-| **Chat** | `/chat/sessions` | POST | Yes | Create session |
-| | `/chat/sessions/{id}` | GET | Yes | Get session + messages |
-| | `/chat/sessions/{id}/messages` | POST | Yes | Send message |
-| | `/chat/sessions/{id}/stream` | WS | Yes | Stream response |
-| **Retrieve** | `/retrieve/search` | POST | Yes | Hybrid search |
-| | `/retrieve/tree/{doc_id}` | GET | Yes | RAPTOR tree structure |
-| **Feedback** | `/feedback` | POST | Yes | Submit feedback |
-| | `/feedback/stats` | GET | Yes | Feedback statistics |
-| **Training** | `/training/trigger` | POST | Admin | Trigger fine-tuning |
-| | `/training/status` | GET | Admin | Training status |
-| | `/training/models` | GET | Yes | List available models |
-| **Eval** | `/eval/run` | POST | Admin | Run evaluation |
-| | `/eval/history` | GET | Admin | Evaluation history |
-| **Admin** | `/admin/config` | GET | Admin | System configuration |
-| | `/admin/jobs` | GET | Admin | Active background jobs |
-
----
-
-## 7. Security Architecture
+## 11. Simplified Production Diagram
 
 ```
-┌──────────────────────────────────────────────┐
-│               Security Layers                 │
-├──────────────────────────────────────────────┤
-│  1. HTTPS (TLS termination at load balancer) │
-│  2. Clerk JWT verification (every request)   │
-│  3. Workspace membership check               │
-│  4. Role-based access (admin/member/viewer)  │
-│  5. Rate limiting (Redis-backed)             │
-│  6. Input validation (Pydantic)              │
-│  7. SQL injection prevention (SQLAlchemy ORM)│
-│  8. File type validation (upload)            │
-│  9. Request ID + audit logging               │
-│ 10. Secrets in env vars (not in code)        │
-└──────────────────────────────────────────────┘
+Users
+  ↓
+Next.js Frontend
+  ↓
+Auth Provider (Clerk/Auth0)
+  ↓
+FastAPI API (Cloud Run)
+  ├── PostgreSQL / Cloud SQL
+  ├── Redis / Memorystore
+  ├── Google Cloud Storage
+  ├── Qdrant
+  ├── Celery Workers
+  ├── RAPTOR Retrieval Engine
+  ├── LiteLLM / LLM Providers
+  └── Monitoring / Logging / Sentry
 ```
 
 ---
 
-## 8. Deployment Architecture
+## 12. Future Optional Components
 
-### Development (Docker Compose)
-
-```yaml
-services:
-  api:        FastAPI (port 8000)
-  worker:     Celery worker
-  postgres:   PostgreSQL 16 (port 5432)
-  qdrant:     Qdrant (port 6333)
-  redis:      Redis 7 (port 6379)
-  minio:      MinIO (port 9000, console 9001)
-  frontend:   Next.js (port 3000)
-```
-
-### Production (Future)
-
-```
-Load Balancer (Nginx / Cloud LB)
-    ├── Frontend (Vercel / Cloud Run)
-    ├── API (2+ replicas behind LB)
-    ├── Workers (auto-scaled Celery)
-    ├── PostgreSQL (managed: RDS / Cloud SQL)
-    ├── Qdrant (managed or self-hosted)
-    ├── Redis (managed: ElastiCache / Memorystore)
-    └── S3 (managed object storage)
-```
-
----
-
-## 9. Migration Strategy (v1 → v2)
-
-| v1 Component | v2 Replacement | Migration Path |
-|-------------|---------------|----------------|
-| ChromaDB (SQLite) | Qdrant | Export embeddings → reimport to Qdrant |
-| In-memory sessions | PostgreSQL `chat_sessions` | Script to migrate any saved sessions |
-| JSONL feedback | PostgreSQL `feedback` | Parse JSONL → INSERT into Postgres |
-| JSONL preferences | PostgreSQL `preference_pairs` | Parse JSONL → INSERT into Postgres |
-| File-based trees (.gpickle) | MinIO + Redis cache | Upload to MinIO, load on demand |
-| Gradio UI | Next.js frontend | Complete rewrite |
-| Direct Ollama/Groq calls | LiteLLM router | Wrap existing logic in LiteLLM |
-| No auth | Clerk | Add middleware, user table |
-| No background jobs | Celery | Move ingestion/training to tasks |
-
-A migration script (`scripts/migrate_from_v1.py`) will handle data transfer.
+- OCR service for scanned PDFs
+- Web crawler ingestion for URLs/websites
+- Docx/Excel parser extensions
+- Multi-tenant organization support
+- Policy engine
+- Dataset review queue
+- Training service (full MLOps)
+- Model registry UI
+- Canary deployment manager
+- Cost analytics dashboard
+- Billing/subscription service
