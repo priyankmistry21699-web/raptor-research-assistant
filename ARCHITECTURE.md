@@ -121,6 +121,95 @@ flowchart TB
 | Migrations             | `alembic/versions/001_initial_schema.py` |
 | Local orchestration    | `docker-compose.yml`                     |
 
+## 3.1 Technology Stack Detail
+
+| Concern | Technology | Current usage in this repository |
+| --- | --- | --- |
+| HTTP API | FastAPI | Main application server, dependency injection, route grouping, OpenAPI docs |
+| ASGI server | Uvicorn | Local application serving |
+| Background jobs | Celery | Async ingestion and evaluation execution |
+| Broker / transient state | Redis | Celery broker, cache, and rate-limit storage |
+| Relational persistence | PostgreSQL | Users, workspaces, collections, documents, chat, jobs, feedback, audit, training state |
+| Vector persistence | Qdrant | Chunk-level and summary-level embedding search |
+| Object storage | MinIO / S3-compatible API | Source files, artifacts, trees, model outputs |
+| Embeddings | Sentence Transformers | Query and document vectorization |
+| Hierarchical retrieval | RAPTOR | Tree-structured context expansion above chunks |
+| LLM routing | LiteLLM + direct clients | Provider abstraction across Ollama and cloud providers |
+| Local model serving | Ollama | Default local generation path |
+| AuthN/AuthZ | Clerk + route role checks | JWT validation and role-aware API access |
+| ORM / migrations | SQLAlchemy + Alembic | Data model mapping and schema evolution |
+| Observability | Prometheus / OpenTelemetry / audit hooks | Metrics, tracing hooks, and audit records |
+| Developer runtime | Docker Compose | Local orchestration of API, worker, DB, cache, vector store, storage |
+| CI / CD | GitHub Actions | Lint, security, tests, image builds, and deploy pipeline |
+
+## 3.2 Module Responsibilities
+
+### Application layer
+
+| Path | Responsibility |
+| --- | --- |
+| `app/main.py` | Bootstraps FastAPI, mounts v1/v2 routes, registers middleware, exceptions, and telemetry |
+| `app/api/mcp_server.py` | Legacy MCP-style request flow and compatibility surface |
+| `app/api/chat.py` | Legacy session-oriented chat API |
+| `app/api/retrieve.py` | Legacy retrieval and paper-specific endpoints |
+| `app/api/train.py` | Legacy training, preference, and learning-loop routes |
+| `app/api/eval.py` | Legacy evaluation endpoints |
+
+### V2 API layer
+
+| Route module | Responsibility |
+| --- | --- |
+| `app/api/v2/routes/health.py` | Live and readiness checks across storage and infra dependencies |
+| `app/api/v2/routes/auth.py` | Clerk webhook sync and current-user identity APIs |
+| `app/api/v2/routes/workspaces.py` | Workspace CRUD and pagination |
+| `app/api/v2/routes/collections.py` | Collection lifecycle and collection scoping |
+| `app/api/v2/routes/documents.py` | Document upload and ingestion job dispatch |
+| `app/api/v2/routes/chat.py` | Session-backed RAG chat APIs |
+| `app/api/v2/routes/retrieve.py` | Retrieval-only APIs for evidence access |
+| `app/api/v2/routes/generate.py` | Generation APIs with or without retrieval context |
+| `app/api/v2/routes/feedback.py` | Feedback submission on assistant messages |
+| `app/api/v2/routes/eval.py` | Evaluation-run creation and status tracking |
+| `app/api/v2/routes/training.py` | Training-run orchestration |
+| `app/api/v2/routes/admin.py` | Stats, audit logs, and model admin operations |
+
+### Core services layer
+
+| Core module | Responsibility |
+| --- | --- |
+| `app/core/config.py` | Service endpoints, provider config, auth settings, and runtime flags |
+| `app/core/security.py` | Authentication middleware, JWT verification, role enforcement |
+| `app/core/middleware.py` | Security headers, rate limiting, middleware stack registration |
+| `app/core/retrieval_orchestrator.py` | Main retrieval pipeline for the v2 platform |
+| `app/core/retrieval.py` | Legacy retriever abstraction used by older routes and UI helpers |
+| `app/core/generation.py` | Prompt-to-answer flow and provider routing |
+| `app/core/llm_client.py` | Direct provider and fine-tuned model inference integration |
+| `app/core/embedding.py` | Embedding-model adapter |
+| `app/core/reranker.py` | Optional reranking layer after initial vector search |
+| `app/core/raptor_tree_builder.py` | Builds hierarchical summary nodes during ingestion |
+| `app/core/raptor_index.py` | Reads/writes RAPTOR tree artifacts and traversal helpers |
+| `app/core/prompt.py` | Prompt templates, system prompts, and task instructions |
+| `app/core/prompt_builder.py` | Builds prompts and message lists from context and history |
+| `app/core/feedback.py` | Feedback persistence and aggregation |
+| `app/core/preference.py` | Preference-pair generation from feedback |
+| `app/core/evaluation.py` | Evaluation and scoring workflows |
+| `app/core/finetune.py` | Fine-tuning orchestration and model registration |
+| `app/core/learning_loop.py` | Automated retraining / model promotion loop |
+| `app/core/session.py` | In-memory session support for legacy flows and UI |
+| `app/core/ingestion.py` | Script-oriented ingestion helpers and arXiv/PDF utilities |
+
+### Persistence and integration layer
+
+| Path | Responsibility |
+| --- | --- |
+| `app/db/models/*.py` | SQLAlchemy models for operational metadata |
+| `app/storage/vector_store.py` | Qdrant integration used by the main platform |
+| `app/storage/object_store.py` | Storage-provider abstraction over S3/MinIO and GCS |
+| `app/storage/s3_client.py` | MinIO / S3-compatible implementation |
+| `app/storage/gcs_client.py` | GCS implementation for production-target storage |
+| `app/storage/cache.py` | Redis-backed cache and rate-limit primitives |
+| `app/workers/tasks/ingest.py` | End-to-end async ingestion pipeline task |
+| `app/workers/tasks/evaluate.py` | Async evaluation task execution |
+
 ## 4. Authentication and Authorization
 
 ### Current behavior
@@ -310,3 +399,49 @@ Use these files as the operational source of truth:
 - `app/main.py` for active API mount points
 - `app/core/config.py` for configuration behavior
 - `ROADMAP_TO_100.md` for readiness scoring and remaining engineering work
+
+## 11. Architecture by Concern
+
+### 11.1 Request-serving architecture
+
+- FastAPI is the control plane for user-facing operations.
+- Middleware enforces request shaping before business logic runs.
+- Route groups map cleanly to platform domains: workspaces, documents, chat, retrieval, feedback, evaluation, training, and admin.
+- Business logic is intentionally pushed into `app/core` so routes stay thin and orchestration remains testable.
+
+### 11.2 Ingestion architecture
+
+- The API receives the upload and records the source-of-truth metadata.
+- Celery takes ownership of long-running work to avoid blocking request threads.
+- The worker performs text extraction, normalization, chunking, embedding, RAPTOR summarization, vector indexing, and job-state updates.
+- PostgreSQL stores document/job state, Qdrant stores retrieval vectors, and MinIO stores file/artifact outputs.
+
+### 11.3 Retrieval architecture
+
+- Query text is embedded first.
+- Qdrant returns top candidate chunk hits.
+- RAPTOR traversal expands those hits upward into section/topic/document summaries.
+- The orchestrator produces both context text and structured citations.
+- This layered retrieval shape is what differentiates the platform from plain chunk-only RAG.
+
+### 11.4 Generation architecture
+
+- Prompt construction is separated from model execution.
+- `prompt.py` defines intent-specific instructions.
+- `prompt_builder.py` converts retrieved evidence and chat history into message payloads.
+- `generation.py` and `llm_client.py` choose providers, execute inference, and normalize output.
+- Ollama remains the default local path, with cloud-provider fallback available when configured.
+
+### 11.5 Data and governance architecture
+
+- PostgreSQL is the operational backbone and audit trail.
+- Feedback and evaluation flows create a path from user behavior to model improvement.
+- Training metadata and model registry entries keep fine-tuned artifacts traceable.
+- Audit records and admin routes support operational introspection.
+
+### 11.6 Deployment architecture
+
+- Local development uses Docker Compose and local Ollama.
+- CI validates style, security, tests, and image builds on every push to `main` and on PRs.
+- Deploy workflow targets a Cloud Run / Artifact Registry shape and intentionally skips docs-only pushes.
+- The production target keeps API, workers, storage, and AI providers loosely coupled for service replacement over time.

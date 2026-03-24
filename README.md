@@ -25,6 +25,61 @@ The repository has moved beyond the original research-demo shape. The active pla
 - Collect feedback and run asynchronous evaluation / training workflows
 - Expose admin, health, metrics, and operational endpoints
 
+## Technology Stack
+
+| Layer | Technology | Why It Exists Here |
+| --- | --- | --- |
+| API framework | FastAPI | Main HTTP API surface, dependency injection, OpenAPI docs, middleware integration |
+| Background execution | Celery | Runs long-lived ingestion and evaluation work outside request latency budgets |
+| Relational database | PostgreSQL | System-of-record for users, workspaces, documents, jobs, chat, feedback, audit, and training metadata |
+| Queue / cache / rate limiting | Redis | Celery broker, short-lived cache, and request throttling state |
+| Vector database | Qdrant | Stores chunk embeddings and RAPTOR summary-node embeddings for retrieval |
+| Object storage | MinIO | Stores uploaded source documents and derived processing artifacts in local development |
+| Local LLM serving | Ollama | Default local generation path for offline or low-cost development |
+| Cloud LLM providers | Anthropic, Groq, OpenAI | Optional generation fallback and provider routing via LiteLLM |
+| Authentication | Clerk | JWT-based auth and user lifecycle integration |
+| Python quality tooling | Ruff, Pytest, Bandit | Linting, tests, and security checks in CI |
+| Container runtime | Docker Compose | Local multi-service orchestration |
+
+## Module Guide
+
+### Top-level application layout
+
+| Path | Purpose |
+| --- | --- |
+| `app/main.py` | Application bootstrap, router mounting, middleware registration, telemetry setup |
+| `app/api/` | Legacy v1-compatible routes and MCP-style endpoints still mounted for compatibility |
+| `app/api/v2/routes/` | Primary production API surface grouped by domain |
+| `app/core/` | Retrieval, generation, ingestion, prompts, training, security, and runtime configuration logic |
+| `app/db/` | SQLAlchemy base, models, and database session wiring |
+| `app/storage/` | Vector store, object store, cache, and storage-provider abstractions |
+| `app/workers/` | Celery app and async task entrypoints |
+| `app/frontend/` | Legacy/demo Gradio interface used for local exploration |
+| `scripts/` | One-off utilities, ingestion helpers, and smoke-test harnesses |
+| `tests/` | API, core, storage, and workflow tests |
+
+### Core module responsibilities
+
+| Module | Purpose |
+| --- | --- |
+| `app/core/config.py` | Environment-backed settings, service endpoints, auth configuration, LLM/provider settings |
+| `app/core/security.py` | Clerk token validation, auth middleware, role checks, development bypass behavior |
+| `app/core/middleware.py` | Security headers, rate limiting, and middleware stack registration |
+| `app/core/retrieval_orchestrator.py` | Main v2 retrieval pipeline: embed query, vector search, optional rerank, RAPTOR traversal, citation assembly |
+| `app/core/retrieval.py` | Legacy RAPTOR retriever used by older routes and the Gradio UI |
+| `app/core/generation.py` | Unified response generation layer with LiteLLM provider routing and conversational fallback |
+| `app/core/llm_client.py` | Direct model/provider client logic, fine-tuned model loading, and fallback behavior |
+| `app/core/raptor_tree_builder.py` | Builds hierarchical summary nodes from chunk embeddings during ingestion |
+| `app/core/raptor_index.py` | Loads, saves, traverses, and summarizes RAPTOR tree artifacts |
+| `app/core/ingestion.py` | Raw arXiv/PDF ingestion helpers used by scripts and legacy flows |
+| `app/core/evaluation.py` | Evaluation and RAGAS-oriented scoring helpers |
+| `app/core/feedback.py` | Feedback capture and persistence logic |
+| `app/core/preference.py` | Converts feedback into preference datasets for tuning workflows |
+| `app/core/finetune.py` | DPO-style fine-tuning orchestration and model registration |
+| `app/core/learning_loop.py` | Continuous feedback-to-training loop control |
+| `app/core/prompt.py` | Prompt constants and task-specific system instructions |
+| `app/core/prompt_builder.py` | Prompt and message assembly for retrieved and conversational requests |
+
 ## Runtime Architecture
 
 ### High-Level Platform Diagram
@@ -240,6 +295,45 @@ The active v2 route groups are:
 - `admin`
 
 v1 routes remain mounted for backward compatibility but are deprecated. The application entrypoint is defined in `app/main.py`.
+
+## V2 Route Map
+
+| Route group | Main purpose |
+| --- | --- |
+| `health` | Liveness, readiness, and service-level checks |
+| `auth` | Clerk webhook handling and authenticated user identity lookup |
+| `workspaces` | Workspace lifecycle and ownership boundaries |
+| `collections` | Collection CRUD and grouping of document corpora |
+| `documents` | Upload, list, inspect, and delete document records and ingestion state |
+| `chat` | Stateful chat sessions backed by retrieval and generation |
+| `retrieve` | Retrieval-only access to ranked evidence and tree context |
+| `generate` | Generation with or without retrieval for service-to-service use cases |
+| `feedback` | User ratings and qualitative comments on assistant responses |
+| `eval` | Evaluation run scheduling and results tracking |
+| `training` | Fine-tuning and learning-loop orchestration |
+| `admin` | Operational stats, audit visibility, and model admin functionality |
+
+## End-to-End Architecture Summary
+
+### Ingestion path
+
+1. A client uploads a file into a workspace collection.
+2. FastAPI writes metadata into PostgreSQL and the raw object into MinIO.
+3. A Celery task is enqueued through Redis.
+4. The worker validates the file, extracts text, normalizes content, chunks the document, and computes embeddings.
+5. RAPTOR section/topic/document summary nodes are built.
+6. Chunk vectors and summary vectors are upserted into Qdrant.
+7. Tree metadata, job status, and document readiness are persisted back into PostgreSQL.
+
+### Query path
+
+1. A user sends a question to the chat or generation API.
+2. Auth middleware resolves identity and applies route-level permissions.
+3. The retrieval orchestrator embeds the query and searches Qdrant for candidate chunks.
+4. RAPTOR tree traversal expands candidates into richer section/topic/document context.
+5. Prompt builder assembles system instructions, retrieved context, and chat history.
+6. The generation layer routes the request to Ollama or a configured cloud provider.
+7. The answer, citations, and message metadata are stored in PostgreSQL and returned to the client.
 
 ## Quick Start
 
