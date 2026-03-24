@@ -31,40 +31,42 @@ The repository has moved beyond the original research-demo shape. The active pla
 
 ```mermaid
 flowchart TB
-  subgraph Client
-    User[User or API Client]
-    Docs[Swagger UI /docs]
+  subgraph Client[Client Layer]
+    User[Researcher or Team User]
+    Docs[Swagger UI and API Consumers]
+    Admin[Admin or Operator]
   end
 
-  subgraph API[FastAPI Application]
-    App[app.main]
-    MW[Middleware\nAuth\nRate Limit\nSecurity Headers\nAudit Hooks]
-    Routes[V2 Routes\nhealth auth workspaces collections documents\nchat retrieve generate feedback eval training admin]
-    Core[Generation\nRetrieval Orchestrator\nRAPTOR Tree Builder\nConfig]
+  subgraph API[FastAPI API Layer]
+    App[app.main\nApplication Entry Point]
+    MW[Middleware Stack\nAuth\nRate Limiting\nSecurity Headers\nAudit Hooks]
+    Routes[V2 Route Groups\nhealth auth workspaces collections documents\nchat retrieve generate feedback eval training admin]
+    Core[Core Services\nGeneration\nRetrieval Orchestrator\nRAPTOR Tree Builder\nConfiguration]
   end
 
-  subgraph Workers[Background Processing]
+  subgraph Workers[Async Processing Layer]
     Celery[Celery Worker]
-    Ingest[Ingestion Tasks]
-    Eval[Evaluation Tasks]
+    Ingest[Ingestion Pipeline\nvalidate -> extract -> chunk -> embed -> build tree]
+    Eval[Evaluation and Training Tasks\nRAGAS runs\nfeedback processing]
   end
 
-  subgraph Storage[Stateful Services]
-    PG[PostgreSQL]
-    Redis[Redis]
-    Qdrant[Qdrant]
-    MinIO[MinIO]
+  subgraph Storage[Stateful Platform Services]
+    PG[PostgreSQL\nmetadata and application state]
+    Redis[Redis\nqueue broker cache rate limits]
+    Qdrant[Qdrant\nvector search and embedding storage]
+    MinIO[MinIO\nraw files and artifacts]
   end
 
-  subgraph LLMs[Model Providers]
-    Ollama[Ollama on host:11435]
-    Anthropic[Anthropic API]
-    Groq[Groq API]
-    OpenAI[OpenAI API]
+  subgraph LLMs[LLM and Model Providers]
+    Ollama[Ollama\nlocal model serving on 11435]
+    Anthropic[Anthropic API\ncloud generation]
+    Groq[Groq API\nfast cloud inference]
+    OpenAI[OpenAI API\ncloud fallback]
   end
 
   User --> App
   Docs --> App
+  Admin --> App
   App --> MW
   MW --> Routes
   Routes --> Core
@@ -83,6 +85,19 @@ flowchart TB
   Core --> Anthropic
   Core --> Groq
   Core --> OpenAI
+
+  style Client fill:#e8f0ff,stroke:#2f5bea,stroke-width:2px,color:#111827
+  style API fill:#e8fff4,stroke:#059669,stroke-width:2px,color:#111827
+  style Workers fill:#fff7e8,stroke:#ea580c,stroke-width:2px,color:#111827
+  style Storage fill:#f5ecff,stroke:#7c3aed,stroke-width:2px,color:#111827
+  style LLMs fill:#ffecef,stroke:#e11d48,stroke-width:2px,color:#111827
+  style App fill:#d9f99d,stroke:#4d7c0f,stroke-width:2px,color:#111827
+  style Core fill:#ccfbf1,stroke:#0f766e,stroke-width:2px,color:#111827
+  style Celery fill:#fed7aa,stroke:#c2410c,stroke-width:2px,color:#111827
+  style PG fill:#ddd6fe,stroke:#6d28d9,stroke-width:2px,color:#111827
+  style Qdrant fill:#e9d5ff,stroke:#9333ea,stroke-width:2px,color:#111827
+  style MinIO fill:#fee2e2,stroke:#dc2626,stroke-width:2px,color:#111827
+  style Redis fill:#fecaca,stroke:#b91c1c,stroke-width:2px,color:#111827
 ```
 
 ### Document Ingestion Flow
@@ -97,19 +112,22 @@ sequenceDiagram
   participant W as Worker
   participant V as Qdrant
 
-  U->>API: Upload document
-  API->>PG: Create document + job records
-  API->>S3: Store raw file
-  API->>Q: Dispatch ingestion task
-  API-->>U: Return document_id + job_id
+  U->>API: 1. Upload document and metadata
+  Note over API: Validate auth\ncheck file size and type\nresolve collection and workspace
+  API->>PG: 2. Create document record\nand ingestion job
+  API->>S3: 3. Store raw file object
+  API->>Q: 4. Dispatch async ingestion task
+  API-->>U: 5. Return document_id and job_id
 
-  Q->>W: Execute ingestion task
-  W->>S3: Fetch raw file
-  W->>W: Extract text and chunk
-  W->>W: Build RAPTOR hierarchy
-  W->>V: Upsert embeddings
-  W->>S3: Save tree artifacts
-  W->>PG: Mark document ready
+  Q->>W: 6. Worker picks up job
+  W->>S3: 7. Download raw file
+  W->>W: 8. Extract and normalize text
+  W->>W: 9. Chunk document into retrieval units
+  W->>W: 10. Generate embeddings
+  W->>W: 11. Build RAPTOR tree\nchunk -> section -> topic -> document
+  W->>V: 12. Upsert chunk and summary vectors
+  W->>S3: 13. Save tree artifacts and derived outputs
+  W->>PG: 14. Mark ingestion job complete\nand document ready
 ```
 
 ### Query and Generation Flow
@@ -124,17 +142,57 @@ sequenceDiagram
   participant LLM as LLM Provider
   participant PG as PostgreSQL
 
-  U->>API: Ask question
-  API->>PG: Store user message
-  API->>E: Embed query
-  API->>V: Search top-k chunks
-  V-->>API: Candidate chunks
-  API->>R: Expand context via tree traversal
-  R-->>API: Section/topic/document context
-  API->>LLM: Generate grounded answer
-  LLM-->>API: Answer text
-  API->>PG: Store assistant message + citations
-  API-->>U: Answer + citations
+  U->>API: 1. Send question in a chat session
+  API->>PG: 2. Store user message and load recent history
+  API->>E: 3. Embed the query
+  API->>V: 4. Search top-k chunk vectors
+  V-->>API: 5. Return candidate chunks with scores
+  API->>R: 6. Expand results through RAPTOR traversal
+  R-->>API: 7. Return section, topic, and document context
+  Note over API: Build prompt with\nretrieved context\nchat history\nsystem instructions
+  API->>LLM: 8. Generate grounded answer
+  LLM-->>API: 9. Return answer text and model output
+  API->>PG: 10. Store assistant message, citations, and metadata
+  API-->>U: 11. Return final answer with citations
+```
+
+### How the Pieces Fit Together
+
+```mermaid
+flowchart LR
+  subgraph Upload[Ingestion Side]
+    File[Uploaded File]
+    Parse[Parse and Clean Text]
+    Chunk[Chunk Content]
+    Embed[Create Embeddings]
+    Tree[Build RAPTOR Tree]
+  end
+
+  subgraph Retrieval[Retrieval Side]
+    Query[User Question]
+    Search[Vector Search in Qdrant]
+    Expand[Tree Expansion\nchunk -> section -> topic -> document]
+    Context[Assembled Context]
+  end
+
+  subgraph Answering[Answer Generation]
+    Prompt[Prompt Builder]
+    Model[LLM Provider]
+    Cite[Citations + Stored Chat Message]
+  end
+
+  File --> Parse --> Chunk --> Embed --> Tree
+  Embed --> Search
+  Tree --> Expand
+  Query --> Search
+  Search --> Expand --> Context --> Prompt --> Model --> Cite
+
+  style Upload fill:#eff6ff,stroke:#2563eb,stroke-width:2px,color:#111827
+  style Retrieval fill:#ecfdf5,stroke:#16a34a,stroke-width:2px,color:#111827
+  style Answering fill:#fff7ed,stroke:#ea580c,stroke-width:2px,color:#111827
+  style File fill:#dbeafe,stroke:#1d4ed8,stroke-width:2px,color:#111827
+  style Query fill:#dcfce7,stroke:#15803d,stroke-width:2px,color:#111827
+  style Model fill:#fed7aa,stroke:#c2410c,stroke-width:2px,color:#111827
 ```
 
 ### Core Services
