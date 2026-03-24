@@ -27,32 +27,142 @@ The repository has moved beyond the original research-demo shape. The active pla
 
 ## Runtime Architecture
 
+### High-Level Platform Diagram
+
+```mermaid
+flowchart TB
+  subgraph Client
+    User[User or API Client]
+    Docs[Swagger UI /docs]
+  end
+
+  subgraph API[FastAPI Application]
+    App[app.main]
+    MW[Middleware\nAuth\nRate Limit\nSecurity Headers\nAudit Hooks]
+    Routes[V2 Routes\nhealth auth workspaces collections documents\nchat retrieve generate feedback eval training admin]
+    Core[Generation\nRetrieval Orchestrator\nRAPTOR Tree Builder\nConfig]
+  end
+
+  subgraph Workers[Background Processing]
+    Celery[Celery Worker]
+    Ingest[Ingestion Tasks]
+    Eval[Evaluation Tasks]
+  end
+
+  subgraph Storage[Stateful Services]
+    PG[PostgreSQL]
+    Redis[Redis]
+    Qdrant[Qdrant]
+    MinIO[MinIO]
+  end
+
+  subgraph LLMs[Model Providers]
+    Ollama[Ollama on host:11435]
+    Anthropic[Anthropic API]
+    Groq[Groq API]
+    OpenAI[OpenAI API]
+  end
+
+  User --> App
+  Docs --> App
+  App --> MW
+  MW --> Routes
+  Routes --> Core
+  Routes --> PG
+  Routes --> Redis
+  Routes --> Qdrant
+  Routes --> MinIO
+  Routes --> Celery
+  Celery --> Ingest
+  Celery --> Eval
+  Ingest --> PG
+  Ingest --> Qdrant
+  Ingest --> MinIO
+  Eval --> PG
+  Core --> Ollama
+  Core --> Anthropic
+  Core --> Groq
+  Core --> OpenAI
+```
+
+### Document Ingestion Flow
+
+```mermaid
+sequenceDiagram
+  participant U as User
+  participant API as FastAPI
+  participant PG as PostgreSQL
+  participant S3 as MinIO
+  participant Q as Redis/Celery
+  participant W as Worker
+  participant V as Qdrant
+
+  U->>API: Upload document
+  API->>PG: Create document + job records
+  API->>S3: Store raw file
+  API->>Q: Dispatch ingestion task
+  API-->>U: Return document_id + job_id
+
+  Q->>W: Execute ingestion task
+  W->>S3: Fetch raw file
+  W->>W: Extract text and chunk
+  W->>W: Build RAPTOR hierarchy
+  W->>V: Upsert embeddings
+  W->>S3: Save tree artifacts
+  W->>PG: Mark document ready
+```
+
+### Query and Generation Flow
+
+```mermaid
+sequenceDiagram
+  participant U as User
+  participant API as FastAPI
+  participant E as Embedding Model
+  participant V as Qdrant
+  participant R as RAPTOR Traversal
+  participant LLM as LLM Provider
+  participant PG as PostgreSQL
+
+  U->>API: Ask question
+  API->>PG: Store user message
+  API->>E: Embed query
+  API->>V: Search top-k chunks
+  V-->>API: Candidate chunks
+  API->>R: Expand context via tree traversal
+  R-->>API: Section/topic/document context
+  API->>LLM: Generate grounded answer
+  LLM-->>API: Answer text
+  API->>PG: Store assistant message + citations
+  API-->>U: Answer + citations
+```
+
 ### Core Services
 
-| Layer | Service | Role |
-| --- | --- | --- |
-| API | FastAPI | Public HTTP API, auth, orchestration, generation, retrieval |
-| Worker | Celery | Ingestion, evaluation, background processing |
-| Database | PostgreSQL | Users, workspaces, documents, chat, feedback, audit, training metadata |
-| Cache / Queue | Redis | Celery broker, caching, rate limiting |
-| Vector Store | Qdrant | Chunk and summary embeddings |
-| Object Storage | MinIO | S3-compatible local storage for uploaded files and artifacts |
-| LLM | Ollama / cloud providers | Local inference plus optional cloud fallback |
-| Auth | Clerk | User identity, JWT verification, webhook-based user sync |
+| Layer          | Service                  | Role                                                                   |
+| -------------- | ------------------------ | ---------------------------------------------------------------------- |
+| API            | FastAPI                  | Public HTTP API, auth, orchestration, generation, retrieval            |
+| Worker         | Celery                   | Ingestion, evaluation, background processing                           |
+| Database       | PostgreSQL               | Users, workspaces, documents, chat, feedback, audit, training metadata |
+| Cache / Queue  | Redis                    | Celery broker, caching, rate limiting                                  |
+| Vector Store   | Qdrant                   | Chunk and summary embeddings                                           |
+| Object Storage | MinIO                    | S3-compatible local storage for uploaded files and artifacts           |
+| LLM            | Ollama / cloud providers | Local inference plus optional cloud fallback                           |
+| Auth           | Clerk                    | User identity, JWT verification, webhook-based user sync               |
 
 ### Local Service Map
 
 These are the currently configured local ports from `docker-compose.yml`.
 
-| Service | URL / Port | Notes |
-| --- | --- | --- |
-| API | `http://localhost:8000` | OpenAPI docs at `/docs` |
-| PostgreSQL | `localhost:5432` | Database `raptor` |
-| Redis | `localhost:6379` | Celery broker / cache |
-| Qdrant | `http://localhost:6335` | Host port remapped from 6333 |
-| MinIO API | `http://localhost:9000` | S3-compatible endpoint |
-| MinIO Console | `http://localhost:9002` | Host port remapped from 9001 |
-| Ollama | `http://localhost:11435` | Expected by the API container via `host.docker.internal` |
+| Service       | URL / Port               | Notes                                                    |
+| ------------- | ------------------------ | -------------------------------------------------------- |
+| API           | `http://localhost:8000`  | OpenAPI docs at `/docs`                                  |
+| PostgreSQL    | `localhost:5432`         | Database `raptor`                                        |
+| Redis         | `localhost:6379`         | Celery broker / cache                                    |
+| Qdrant        | `http://localhost:6335`  | Host port remapped from 6333                             |
+| MinIO API     | `http://localhost:9000`  | S3-compatible endpoint                                   |
+| MinIO Console | `http://localhost:9002`  | Host port remapped from 9001                             |
+| Ollama        | `http://localhost:11435` | Expected by the API container via `host.docker.internal` |
 
 ## API Surface
 
