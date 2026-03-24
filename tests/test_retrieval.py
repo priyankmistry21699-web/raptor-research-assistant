@@ -6,8 +6,8 @@ import pytest
 from app.core.retrieval import RaptorRetriever
 
 
-@pytest.fixture(scope="module")
-def retriever():
+@pytest.fixture
+def retriever(sample_raptor_tree_dir):
     return RaptorRetriever()
 
 
