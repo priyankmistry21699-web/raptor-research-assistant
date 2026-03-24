@@ -73,16 +73,16 @@ flowchart TB
 
 ### 2.2 Current Service Inventory
 
-| Service | Responsibility | Local Address |
-| --- | --- | --- |
-| FastAPI API | Public API, auth, retrieval, generation, admin, metrics | `http://localhost:8000` |
-| PostgreSQL | Relational metadata and operational state | `localhost:5432` |
-| Redis | Celery broker, cache, rate limiting state | `localhost:6379` |
-| Qdrant | Vector storage for chunk and summary embeddings | `http://localhost:6335` |
-| MinIO | S3-compatible document and artifact storage | `http://localhost:9000` |
-| MinIO Console | Local object store console | `http://localhost:9002` |
-| Ollama | Default local LLM endpoint | `http://localhost:11435` |
-| Celery Worker | Background ingestion and evaluation jobs | internal Docker service |
+| Service       | Responsibility                                          | Local Address            |
+| ------------- | ------------------------------------------------------- | ------------------------ |
+| FastAPI API   | Public API, auth, retrieval, generation, admin, metrics | `http://localhost:8000`  |
+| PostgreSQL    | Relational metadata and operational state               | `localhost:5432`         |
+| Redis         | Celery broker, cache, rate limiting state               | `localhost:6379`         |
+| Qdrant        | Vector storage for chunk and summary embeddings         | `http://localhost:6335`  |
+| MinIO         | S3-compatible document and artifact storage             | `http://localhost:9000`  |
+| MinIO Console | Local object store console                              | `http://localhost:9002`  |
+| Ollama        | Default local LLM endpoint                              | `http://localhost:11435` |
+| Celery Worker | Background ingestion and evaluation jobs                | internal Docker service  |
 
 ### 2.3 Current Request Path
 
@@ -106,20 +106,20 @@ flowchart TB
 
 ## 3. Current Code Map
 
-| Area | Key Files |
-| --- | --- |
-| Application entrypoint | `app/main.py` |
-| Configuration | `app/core/config.py` |
-| Auth / security | `app/core/security.py` |
-| Middleware | `app/core/middleware.py` |
-| Generation | `app/core/generation.py` |
-| Retrieval | `app/core/retrieval_orchestrator.py` |
-| RAPTOR tree building | `app/core/raptor_tree_builder.py` |
-| API routes | `app/api/v2/routes/*.py` |
-| Worker tasks | `app/workers/tasks/*.py` |
-| Database models | `app/db/models/*.py` |
-| Migrations | `alembic/versions/001_initial_schema.py` |
-| Local orchestration | `docker-compose.yml` |
+| Area                   | Key Files                                |
+| ---------------------- | ---------------------------------------- |
+| Application entrypoint | `app/main.py`                            |
+| Configuration          | `app/core/config.py`                     |
+| Auth / security        | `app/core/security.py`                   |
+| Middleware             | `app/core/middleware.py`                 |
+| Generation             | `app/core/generation.py`                 |
+| Retrieval              | `app/core/retrieval_orchestrator.py`     |
+| RAPTOR tree building   | `app/core/raptor_tree_builder.py`        |
+| API routes             | `app/api/v2/routes/*.py`                 |
+| Worker tasks           | `app/workers/tasks/*.py`                 |
+| Database models        | `app/db/models/*.py`                     |
+| Migrations             | `alembic/versions/001_initial_schema.py` |
+| Local orchestration    | `docker-compose.yml`                     |
 
 ## 4. Authentication and Authorization
 
@@ -186,20 +186,20 @@ Stores ephemeral and queue data:
 
 The application mounts the following v2 route groups under `/api/v2`:
 
-| Group | Responsibility |
-| --- | --- |
-| `health` | live / ready checks |
-| `auth` | Clerk webhook and current user info |
-| `workspaces` | workspace CRUD |
-| `collections` | collection CRUD |
-| `documents` | upload, list, status, delete |
-| `chat` | session creation, listing, retrieval, messaging |
-| `retrieve` | standalone retrieval |
-| `generate` | standalone generation |
-| `feedback` | feedback submission and listing |
-| `eval` | evaluation run creation and tracking |
-| `training` | training run creation and tracking |
-| `admin` | stats, audit, model-admin functions |
+| Group         | Responsibility                                  |
+| ------------- | ----------------------------------------------- |
+| `health`      | live / ready checks                             |
+| `auth`        | Clerk webhook and current user info             |
+| `workspaces`  | workspace CRUD                                  |
+| `collections` | collection CRUD                                 |
+| `documents`   | upload, list, status, delete                    |
+| `chat`        | session creation, listing, retrieval, messaging |
+| `retrieve`    | standalone retrieval                            |
+| `generate`    | standalone generation                           |
+| `feedback`    | feedback submission and listing                 |
+| `eval`        | evaluation run creation and tracking            |
+| `training`    | training run creation and tracking              |
+| `admin`       | stats, audit, model-admin functions             |
 
 Legacy v1 routes are still mounted for backward compatibility but are deprecated.
 
