@@ -70,6 +70,7 @@ async def upload_document(
 
     # Dispatch Celery task
     from app.workers.tasks.ingest import run_ingestion_pipeline
+
     run_ingestion_pipeline.delay(str(job.id), str(doc.id), str(collection_id))
 
     return doc

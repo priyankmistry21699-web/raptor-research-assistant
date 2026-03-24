@@ -8,7 +8,7 @@ POST /generate/raw       — Direct LLM generation without retrieval
 import logging
 import uuid
 
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, Depends, Request
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
@@ -63,8 +63,11 @@ def generate_with_rag(
         session=db,
     )
     log_audit_from_request(
-        db, request, action="generation.rag",
-        resource="collection", resource_id=req.collection_id,
+        db,
+        request,
+        action="generation.rag",
+        resource="collection",
+        resource_id=req.collection_id,
     )
     return GenerateResponse(**result)
 

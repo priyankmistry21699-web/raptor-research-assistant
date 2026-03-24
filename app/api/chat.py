@@ -8,15 +8,16 @@ Endpoints:
   GET    /chat/sessions    — List all active sessions
   DELETE /chat/session/{id} — Delete a session
 """
+
 import os
 import sys
 import logging
+from typing import Any, Dict, List, Optional
 
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
-from typing import List, Dict, Any, Optional
 
-sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '../..')))
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "../..")))
 
 from app.core.session import session_manager
 from app.core.retrieval import RaptorRetriever
@@ -45,40 +46,63 @@ def _retrieve_chunks(query: str, top_k: int = 5) -> List[Dict[str, Any]]:
     chunks = []
     for r in results:
         ctx = r.get("tree_context", {})
-        chunks.append({
-            "arxiv_id": r.get("arxiv_id", ""),
-            "chunk_index": r.get("chunk_index", 0),
-            "chunk_text": r.get("text", ""),
-            "section_num": ctx.get("section_num", ""),
-            "section_title": ctx.get("section_title", ""),
-            "section_summary": ctx.get("section_summary", ""),
-            "topic": ctx.get("topic", ""),
-            "topic_summary": ctx.get("topic_summary", ""),
-            "paper_title": ctx.get("paper_title", ""),
-        })
+        chunks.append(
+            {
+                "arxiv_id": r.get("arxiv_id", ""),
+                "chunk_index": r.get("chunk_index", 0),
+                "chunk_text": r.get("text", ""),
+                "section_num": ctx.get("section_num", ""),
+                "section_title": ctx.get("section_title", ""),
+                "section_summary": ctx.get("section_summary", ""),
+                "topic": ctx.get("topic", ""),
+                "topic_summary": ctx.get("topic_summary", ""),
+                "paper_title": ctx.get("paper_title", ""),
+            }
+        )
     return chunks
 
 
 def _is_conversational_message(message: str) -> bool:
     """Check if message is a simple conversational/greeting that doesn't need research context."""
     message_lower = message.lower().strip()
-    
+
     # Common greetings and conversational starters
     conversational_patterns = [
-        "hello", "hi", "hey", "greetings", "good morning", "good afternoon", 
-        "good evening", "how are you", "what's up", "how can you help",
-        "can you help", "help me", "assist me", "what can you do",
-        "tell me about yourself", "who are you", "introduce yourself",
-        "thanks", "thank you", "bye", "goodbye", "see you", "farewell"
+        "hello",
+        "hi",
+        "hey",
+        "greetings",
+        "good morning",
+        "good afternoon",
+        "good evening",
+        "how are you",
+        "what's up",
+        "how can you help",
+        "can you help",
+        "help me",
+        "assist me",
+        "what can you do",
+        "tell me about yourself",
+        "who are you",
+        "introduce yourself",
+        "thanks",
+        "thank you",
+        "bye",
+        "goodbye",
+        "see you",
+        "farewell",
     ]
-    
+
     # Check for exact matches or short messages containing these words
     if len(message.split()) <= 5:  # Short messages
         for pattern in conversational_patterns:
             if pattern in message_lower:
                 return True
-    
+
     return False
+
+
+def _build_citations(chunks: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
     """Extract citation info from retrieved chunks."""
     citations = []
     seen = set()
@@ -87,17 +111,20 @@ def _is_conversational_message(message: str) -> bool:
         if key in seen:
             continue
         seen.add(key)
-        citations.append({
-            "arxiv_id": c.get("arxiv_id", ""),
-            "paper_title": c.get("paper_title", ""),
-            "section": c.get("section_title", ""),
-            "topic": c.get("topic", ""),
-            "excerpt": c.get("chunk_text", "")[:200] + "...",
-        })
+        citations.append(
+            {
+                "arxiv_id": c.get("arxiv_id", ""),
+                "paper_title": c.get("paper_title", ""),
+                "section": c.get("section_title", ""),
+                "topic": c.get("topic", ""),
+                "excerpt": c.get("chunk_text", "")[:200] + "...",
+            }
+        )
     return citations
 
 
 # --- Request / Response models ---
+
 
 class ChatRequest(BaseModel):
     message: str
@@ -106,6 +133,7 @@ class ChatRequest(BaseModel):
     model: str = "auto"
     top_k: int = 5
 
+
 class Citation(BaseModel):
     arxiv_id: str = ""
     paper_title: str = ""
@@ -113,17 +141,20 @@ class Citation(BaseModel):
     topic: str = ""
     excerpt: str = ""
 
+
 class ChatResponse(BaseModel):
     session_id: str
     answer: str
     citations: List[Citation]
     model_used: str
 
+
 class SessionInfo(BaseModel):
     session_id: str
     created_at: str
     message_count: int
     papers_referenced: List[str]
+
 
 class SessionDetail(BaseModel):
     session_id: str
@@ -134,6 +165,7 @@ class SessionDetail(BaseModel):
 
 
 # --- Endpoints ---
+
 
 @router.post("", response_model=ChatResponse)
 def chat(req: ChatRequest):
@@ -152,12 +184,14 @@ def chat(req: ChatRequest):
 
     # 3. Check if this is a conversational message
     is_conversational = _is_conversational_message(req.message)
-    
+
     if is_conversational:
         # For conversational messages, skip retrieval and use simple prompt
         chunks = []
         citations = []
-        logger.info(f"Conversational message detected: '{req.message}' - skipping retrieval")
+        logger.info(
+            f"Conversational message detected: '{req.message}' - skipping retrieval"
+        )
     else:
         # 3. Retrieve relevant chunks (for research questions)
         chunks = _retrieve_chunks(req.message, req.top_k)

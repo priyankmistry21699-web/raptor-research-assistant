@@ -27,6 +27,7 @@ def _get_client() -> redis.Redis:
 
 # ── Key-value cache ───────────────────────────────────────────────────
 
+
 def cache_get(key: str) -> Any | None:
     """Return the cached value (JSON-decoded), or None."""
     client = _get_client()
@@ -58,6 +59,7 @@ def cache_delete_pattern(pattern: str) -> int:
 
 # ── Rate limiting ─────────────────────────────────────────────────────
 
+
 def check_rate_limit(key: str, max_requests: int, window_seconds: int) -> bool:
     """
     Sliding-window counter rate limit.
@@ -73,6 +75,7 @@ def check_rate_limit(key: str, max_requests: int, window_seconds: int) -> bool:
 
 
 # ── Health ────────────────────────────────────────────────────────────
+
 
 def ping() -> bool:
     """Return True if Redis is reachable."""

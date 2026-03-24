@@ -8,6 +8,7 @@ Endpoints:
   GET  /feedback/session/{id} — Get feedback for a specific session
   GET  /feedback/type/{type}  — Get feedback by type (helpful/incorrect/hallucination/correction)
 """
+
 import os
 import sys
 
@@ -15,7 +16,7 @@ from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 from typing import List, Dict, Any, Optional
 
-sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '../..')))
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "../..")))
 
 from app.core.feedback import feedback_store, FEEDBACK_TYPES
 from app.core.preference import preference_store
@@ -24,6 +25,7 @@ router = APIRouter(prefix="/feedback", tags=["feedback"])
 
 
 # --- Request / Response models ---
+
 
 class FeedbackRequest(BaseModel):
     session_id: str
@@ -35,10 +37,12 @@ class FeedbackRequest(BaseModel):
     task: str = "qa"
     citations: Optional[List[Dict[str, str]]] = None
 
+
 class FeedbackResponse(BaseModel):
     status: str
     feedback_type: str
     timestamp: str
+
 
 class FeedbackStats(BaseModel):
     total: int
@@ -47,6 +51,7 @@ class FeedbackStats(BaseModel):
 
 
 # --- Endpoints ---
+
 
 @router.post("", response_model=FeedbackResponse)
 def submit_feedback(req: FeedbackRequest):
@@ -62,12 +67,12 @@ def submit_feedback(req: FeedbackRequest):
     if req.feedback_type not in FEEDBACK_TYPES:
         raise HTTPException(
             status_code=400,
-            detail=f"Invalid feedback type '{req.feedback_type}'. Must be one of: {sorted(FEEDBACK_TYPES)}"
+            detail=f"Invalid feedback type '{req.feedback_type}'. Must be one of: {sorted(FEEDBACK_TYPES)}",
         )
     if req.feedback_type == "correction" and not req.correction.strip():
         raise HTTPException(
             status_code=400,
-            detail="Correction text is required when feedback_type is 'correction'"
+            detail="Correction text is required when feedback_type is 'correction'",
         )
 
     record = feedback_store.submit(
@@ -108,7 +113,9 @@ def get_feedback_by_session(session_id: str):
     """Get all feedback entries for a specific chat session."""
     entries = feedback_store.get_by_session(session_id)
     if not entries:
-        raise HTTPException(status_code=404, detail="No feedback found for this session")
+        raise HTTPException(
+            status_code=404, detail="No feedback found for this session"
+        )
     return entries
 
 
@@ -118,7 +125,7 @@ def get_feedback_by_type(feedback_type: str):
     if feedback_type not in FEEDBACK_TYPES:
         raise HTTPException(
             status_code=400,
-            detail=f"Invalid type '{feedback_type}'. Must be one of: {sorted(FEEDBACK_TYPES)}"
+            detail=f"Invalid type '{feedback_type}'. Must be one of: {sorted(FEEDBACK_TYPES)}",
         )
     entries = feedback_store.get_by_type(feedback_type)
     return entries

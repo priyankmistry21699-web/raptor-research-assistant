@@ -4,8 +4,6 @@ Feedback routes — /api/v2/feedback
 Captures user ratings and comments on assistant messages.
 """
 
-import uuid
-
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -30,14 +28,18 @@ async def submit_feedback(
     if not msg:
         raise HTTPException(status_code=404, detail="Message not found")
     if msg.role != "assistant":
-        raise HTTPException(status_code=400, detail="Feedback must be on assistant messages")
+        raise HTTPException(
+            status_code=400, detail="Feedback must be on assistant messages"
+        )
 
     # Check for existing feedback
     existing = await db.execute(
         select(Feedback).where(Feedback.message_id == body.message_id)
     )
     if existing.scalar_one_or_none():
-        raise HTTPException(status_code=409, detail="Feedback already submitted for this message")
+        raise HTTPException(
+            status_code=409, detail="Feedback already submitted for this message"
+        )
 
     fb = Feedback(
         message_id=body.message_id,

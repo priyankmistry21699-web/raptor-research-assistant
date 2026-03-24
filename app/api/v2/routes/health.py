@@ -38,7 +38,10 @@ async def readiness():
     try:
         from qdrant_client import QdrantClient
         from app.core.config import settings
-        client = QdrantClient(url=settings.qdrant.url, api_key=settings.qdrant.api_key, timeout=3)
+
+        client = QdrantClient(
+            url=settings.qdrant.url, api_key=settings.qdrant.api_key, timeout=3
+        )
         client.get_collections()
     except Exception:
         qdrant_ok = "unavailable"
@@ -48,9 +51,16 @@ async def readiness():
     try:
         from app.storage.s3_client import _get_client
         from app.core.config import settings as s
+
         _get_client().head_bucket(Bucket=s.s3.bucket)
     except Exception:
         s3_ok = "unavailable"
 
-    overall = "ok" if all(s == "ok" for s in [db_ok, redis_ok, qdrant_ok, s3_ok]) else "degraded"
-    return ReadinessCheck(status=overall, database=db_ok, redis=redis_ok, qdrant=qdrant_ok, s3=s3_ok)
+    overall = (
+        "ok"
+        if all(s == "ok" for s in [db_ok, redis_ok, qdrant_ok, s3_ok])
+        else "degraded"
+    )
+    return ReadinessCheck(
+        status=overall, database=db_ok, redis=redis_ok, qdrant=qdrant_ok, s3=s3_ok
+    )

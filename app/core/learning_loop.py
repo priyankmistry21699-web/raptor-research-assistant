@@ -15,11 +15,11 @@ This module orchestrates:
 
 Can run automatically (background thread) or be triggered manually via API.
 """
+
 import json
 import os
 import logging
 import threading
-import time
 from datetime import datetime, timezone
 from typing import Dict, Any, Optional, List
 
@@ -40,18 +40,18 @@ logger = logging.getLogger(__name__)
 _loop_lock = threading.Lock()
 _loop_state: Dict[str, Any] = {
     "auto_enabled": False,
-    "min_new_feedback": 10,       # Min new feedback entries before auto-trigger
-    "check_interval_seconds": 300, # How often to check (5 min)
-    "last_feedback_count": 0,      # Feedback count at last training trigger
+    "min_new_feedback": 10,  # Min new feedback entries before auto-trigger
+    "check_interval_seconds": 300,  # How often to check (5 min)
+    "last_feedback_count": 0,  # Feedback count at last training trigger
     "last_triggered_at": None,
     "trigger_count": 0,
     "current_run": None,
-    "active_model": None,          # Currently selected best model alias
+    "active_model": None,  # Currently selected best model alias
 }
 
 # History of learning loop runs
 LOOP_HISTORY_FILE = os.path.join(
-    os.path.dirname(__file__), '..', '..', 'data', 'feedback', 'loop_history.jsonl'
+    os.path.dirname(__file__), "..", "..", "data", "feedback", "loop_history.jsonl"
 )
 
 _auto_thread: Optional[threading.Thread] = None
@@ -75,7 +75,7 @@ def get_loop_history() -> List[Dict[str, Any]]:
     if not os.path.exists(LOOP_HISTORY_FILE):
         return []
     entries = []
-    with open(LOOP_HISTORY_FILE, 'r', encoding='utf-8') as f:
+    with open(LOOP_HISTORY_FILE, "r", encoding="utf-8") as f:
         for line in f:
             line = line.strip()
             if line:
@@ -86,8 +86,8 @@ def get_loop_history() -> List[Dict[str, Any]]:
 def _append_history(entry: Dict[str, Any]):
     """Append a loop run record to history."""
     os.makedirs(os.path.dirname(LOOP_HISTORY_FILE), exist_ok=True)
-    with open(LOOP_HISTORY_FILE, 'a', encoding='utf-8') as f:
-        f.write(json.dumps(entry, ensure_ascii=False) + '\n')
+    with open(LOOP_HISTORY_FILE, "a", encoding="utf-8") as f:
+        f.write(json.dumps(entry, ensure_ascii=False) + "\n")
 
 
 def trigger_learning_loop(
@@ -143,7 +143,9 @@ def trigger_learning_loop(
         }
 
     # Step 2: Build preference dataset
-    logger.info(f"Learning loop: building preference dataset ({current_count} feedback entries)")
+    logger.info(
+        f"Learning loop: building preference dataset ({current_count} feedback entries)"
+    )
     build_result = preference_store.build_from_feedback()
     pairs_count = build_result["pairs_created"]
 
@@ -236,7 +238,9 @@ def _auto_loop_worker():
         try:
             result = trigger_learning_loop()
             if result["status"] == "success":
-                logger.info(f"Learning loop auto-trigger succeeded: {result['model_alias']}")
+                logger.info(
+                    f"Learning loop auto-trigger succeeded: {result['model_alias']}"
+                )
             elif result["status"] == "skipped":
                 logger.debug(f"Learning loop auto-check: {result['reason']}")
         except Exception as e:
@@ -314,10 +318,7 @@ def select_best_model() -> Dict[str, str]:
 
     Returns the model alias and metadata.
     """
-    finetuned = [
-        (k, v) for k, v in MODEL_REGISTRY.items()
-        if v.get("is_finetuned")
-    ]
+    finetuned = [(k, v) for k, v in MODEL_REGISTRY.items() if v.get("is_finetuned")]
 
     if finetuned:
         alias, config = finetuned[-1]  # Most recently added

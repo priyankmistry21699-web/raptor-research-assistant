@@ -40,7 +40,10 @@ async def list_workspaces(
     total_result = await db.execute(select(func.count()).select_from(Workspace))
     total = total_result.scalar() or 0
     result = await db.execute(
-        select(Workspace).order_by(Workspace.created_at.desc()).offset(offset).limit(page_size)
+        select(Workspace)
+        .order_by(Workspace.created_at.desc())
+        .offset(offset)
+        .limit(page_size)
     )
     items = result.scalars().all()
     return PaginatedResponse(items=items, total=total, page=page, page_size=page_size)

@@ -35,7 +35,7 @@ def sanitize_prompt(text: str, max_length: int = 10000) -> str:
     - Does NOT strip injection patterns (only flags them)
     """
     # Remove null bytes and other control chars (keep newline, tab)
-    text = re.sub(r'[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]', '', text)
+    text = re.sub(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]", "", text)
     return text[:max_length].strip()
 
 
@@ -54,7 +54,7 @@ def sanitize_name(text: str, max_length: int = 200) -> str:
     """Sanitize a collection/document name — alphanumeric, spaces, hyphens, underscores."""
     text = text.strip()[:max_length]
     # Allow only safe characters
-    text = re.sub(r'[^\w\s\-.]', '', text)
+    text = re.sub(r"[^\w\s\-.]", "", text)
     return text.strip()
 
 

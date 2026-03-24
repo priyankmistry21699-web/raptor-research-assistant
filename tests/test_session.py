@@ -1,7 +1,7 @@
 """
 Tests for app/core/session.py — Session and SessionManager.
 """
-import pytest
+
 from app.core.session import Session, SessionManager
 
 

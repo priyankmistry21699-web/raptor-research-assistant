@@ -19,6 +19,7 @@ logger = logging.getLogger(__name__)
 
 # ── Provider mapping ──────────────────────────────────────────────────
 
+
 def _litellm_model_name() -> str:
     """Map settings to a LiteLLM model string."""
     provider = settings.llm.provider.lower()
@@ -59,10 +60,7 @@ SYSTEM_PROMPT = (
     "information, say so clearly. Cite sources using [Source N] notation."
 )
 
-CONTEXT_TEMPLATE = (
-    "### Context\n{context}\n\n"
-    "### Question\n{question}"
-)
+CONTEXT_TEMPLATE = "### Context\n{context}\n\n### Question\n{question}"
 
 CONVERSATIONAL_SYSTEM = (
     "You are a helpful assistant. Respond naturally to the user's message."
@@ -82,7 +80,9 @@ def _build_messages(
         sys_prompt = system_prompt or SYSTEM_PROMPT
         messages.append({"role": "system", "content": sys_prompt})
     else:
-        messages.append({"role": "system", "content": system_prompt or CONVERSATIONAL_SYSTEM})
+        messages.append(
+            {"role": "system", "content": system_prompt or CONVERSATIONAL_SYSTEM}
+        )
 
     # Append chat history (last N turns to stay within token limits)
     if chat_history:
@@ -107,7 +107,9 @@ _FALLBACK_PROVIDERS = [
 ]
 
 
-def _try_fallback(messages: list[dict], temperature: float, max_tokens: int) -> str | None:
+def _try_fallback(
+    messages: list[dict], temperature: float, max_tokens: int
+) -> str | None:
     """Attempt fallback providers when the primary fails."""
     import litellm
 
@@ -139,6 +141,7 @@ def _try_fallback(messages: list[dict], temperature: float, max_tokens: int) -> 
 
 
 # ── Main generation ───────────────────────────────────────────────────
+
 
 def generate(
     question: str,
@@ -180,7 +183,9 @@ def generate(
         )
         content = resp.choices[0].message.content
         model_used = model
-        token_count = getattr(resp.usage, "completion_tokens", None) or len(content.split())
+        token_count = getattr(resp.usage, "completion_tokens", None) or len(
+            content.split()
+        )
     except Exception as e:
         logger.warning("Primary LLM (%s) failed: %s — trying fallbacks", model, e)
         content = _try_fallback(messages, temperature, max_tokens)

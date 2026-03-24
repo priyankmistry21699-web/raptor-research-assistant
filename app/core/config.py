@@ -38,6 +38,7 @@ class QdrantSettings(BaseSettings):
 
 class StorageSettings(BaseSettings):
     """Object storage — works with both MinIO (local) and GCS (production)."""
+
     provider: str = Field(default="s3", alias="STORAGE_PROVIDER")  # "s3" or "gcs"
     # S3 / MinIO settings (local dev default)
     endpoint: str = Field(default="http://localhost:9000", alias="S3_ENDPOINT")
@@ -47,7 +48,9 @@ class StorageSettings(BaseSettings):
     region: str = Field(default="us-east-1", alias="S3_REGION")
     # GCS settings (production)
     gcs_project: Optional[str] = Field(default=None, alias="GCS_PROJECT")
-    gcs_credentials_json: Optional[str] = Field(default=None, alias="GOOGLE_APPLICATION_CREDENTIALS")
+    gcs_credentials_json: Optional[str] = Field(
+        default=None, alias="GOOGLE_APPLICATION_CREDENTIALS"
+    )
     # Additional buckets
     tree_bucket: str = Field(default="raptor-trees", alias="STORAGE_TREE_BUCKET")
     model_bucket: str = Field(default="raptor-models", alias="STORAGE_MODEL_BUCKET")
@@ -92,7 +95,7 @@ class Settings(BaseSettings):
     environment: str = Field(default="development", alias="ENVIRONMENT")
 
     # Server
-    api_host: str = Field(default="0.0.0.0", alias="API_HOST")
+    api_host: str = Field(default="127.0.0.1", alias="API_HOST")
     api_port: int = Field(default=8000, alias="API_PORT")
     frontend_url: str = Field(default="http://localhost:3000", alias="FRONTEND_URL")
     cors_origins: List[str] = Field(

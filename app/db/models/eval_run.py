@@ -14,16 +14,22 @@ class EvalRun(Base):
     __tablename__ = "eval_runs"
 
     id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4,
+        UUID(as_uuid=True),
+        primary_key=True,
+        default=uuid.uuid4,
         server_default=text("gen_random_uuid()"),
     )
     collection_id: Mapped[uuid.UUID | None] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("collections.id", ondelete="SET NULL"),
+        UUID(as_uuid=True),
+        ForeignKey("collections.id", ondelete="SET NULL"),
         index=True,
     )
     eval_type: Mapped[str] = mapped_column(String(50), nullable=False)
     status: Mapped[str] = mapped_column(
-        String(50), default="pending", server_default="pending", index=True,
+        String(50),
+        default="pending",
+        server_default="pending",
+        index=True,
     )
     config: Mapped[dict | None] = mapped_column(JSONB, default=dict)
     results: Mapped[dict | None] = mapped_column(JSONB)
@@ -31,7 +37,8 @@ class EvalRun(Base):
     started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), default=lambda: datetime.now(timezone.utc),
+        DateTime(timezone=True),
+        default=lambda: datetime.now(timezone.utc),
         server_default=text("NOW()"),
     )
 

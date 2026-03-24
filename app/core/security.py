@@ -9,8 +9,6 @@ Security model:
 """
 
 import logging
-import uuid
-from typing import Optional
 
 from fastapi import Request, HTTPException, Depends
 from starlette.middleware.base import BaseHTTPMiddleware
@@ -27,6 +25,7 @@ ROLE_HIERARCHY = {"admin": 3, "editor": 2, "viewer": 1}
 
 
 # ── Auth middleware ───────────────────────────────────────────────────
+
 
 class AuthMiddleware(BaseHTTPMiddleware):
     """
@@ -54,14 +53,15 @@ class AuthMiddleware(BaseHTTPMiddleware):
             return await call_next(request)
 
         # Skip auth for public prefixes
-        if any(path.startswith(p) for p in self.PUBLIC_PREFIXES if p not in self.PUBLIC_EXACT):
+        if any(
+            path.startswith(p)
+            for p in self.PUBLIC_PREFIXES
+            if p not in self.PUBLIC_EXACT
+        ):
             return await call_next(request)
 
         # Dev mode bypass — only when environment is explicitly "development"
-        if (
-            settings.environment == "development"
-            and not settings.auth.clerk_secret_key
-        ):
+        if settings.environment == "development" and not settings.auth.clerk_secret_key:
             request.state.user_id = None
             request.state.clerk_id = "dev-user"
             request.state.user_role = "viewer"  # Never grant admin in dev bypass
@@ -88,6 +88,7 @@ class AuthMiddleware(BaseHTTPMiddleware):
 
 # ── JWT verification ──────────────────────────────────────────────────
 
+
 def _verify_clerk_token(token: str) -> dict:
     """
     Verify a Clerk-issued JWT.
@@ -108,6 +109,7 @@ def _verify_clerk_token(token: str) -> dict:
 
 
 # ── Route-level dependencies ─────────────────────────────────────────
+
 
 def get_current_user(request: Request) -> dict:
     """
@@ -149,6 +151,7 @@ def require_roles(*roles: str):
     FastAPI dependency factory — enforce that user has one of the listed roles.
     Usage: Depends(require_roles("admin", "editor"))
     """
+
     def _check(current_user: dict = Depends(get_current_user)) -> dict:
         if current_user.get("role") not in roles:
             raise HTTPException(

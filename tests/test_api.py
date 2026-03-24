@@ -4,8 +4,8 @@ Tests for FastAPI API routers — chat, retrieve, feedback, train, eval.
 Uses FastAPI's TestClient for HTTP-level integration testing.
 Mocks external dependencies (LLM, ChromaDB) where needed.
 """
+
 import pytest
-from unittest.mock import patch, MagicMock
 from fastapi.testclient import TestClient
 
 
@@ -13,12 +13,14 @@ from fastapi.testclient import TestClient
 def client():
     """Create a TestClient for the full FastAPI app."""
     from app.api.mcp_server import app
+
     return TestClient(app)
 
 
 # ============================================================
 # System Endpoints
 # ============================================================
+
 
 class TestSystemEndpoints:
     """Tests for top-level system routes."""
@@ -52,6 +54,7 @@ class TestSystemEndpoints:
 # ============================================================
 # Chat Endpoints
 # ============================================================
+
 
 class TestChatEndpoints:
     """Tests for /chat/* routes."""
@@ -99,16 +102,20 @@ class TestChatEndpoints:
 # Feedback Endpoints
 # ============================================================
 
+
 class TestFeedbackEndpoints:
     """Tests for /feedback/* routes."""
 
     def test_submit_feedback(self, client):
-        resp = client.post("/feedback", json={
-            "session_id": "test_s1",
-            "question": "What is attention?",
-            "answer": "A mechanism.",
-            "feedback_type": "helpful",
-        })
+        resp = client.post(
+            "/feedback",
+            json={
+                "session_id": "test_s1",
+                "question": "What is attention?",
+                "answer": "A mechanism.",
+                "feedback_type": "helpful",
+            },
+        )
         assert resp.status_code == 200
         data = resp.json()
         assert data["feedback_type"] == "helpful"
@@ -126,10 +133,15 @@ class TestFeedbackEndpoints:
 
     def test_get_feedback_by_type(self, client):
         # Submit a specific type first
-        client.post("/feedback", json={
-            "session_id": "s2", "question": "Q",
-            "answer": "A", "feedback_type": "incorrect",
-        })
+        client.post(
+            "/feedback",
+            json={
+                "session_id": "s2",
+                "question": "Q",
+                "answer": "A",
+                "feedback_type": "incorrect",
+            },
+        )
         resp = client.get("/feedback/type/incorrect")
         assert resp.status_code == 200
 
@@ -141,6 +153,7 @@ class TestFeedbackEndpoints:
 # ============================================================
 # Retrieve Endpoints
 # ============================================================
+
 
 class TestRetrieveEndpoints:
     """Tests for /retrieve/* routes."""
@@ -166,6 +179,7 @@ class TestRetrieveEndpoints:
 # ============================================================
 # Train Endpoints
 # ============================================================
+
 
 class TestTrainEndpoints:
     """Tests for /train/* routes."""
@@ -205,6 +219,7 @@ class TestTrainEndpoints:
 # Eval Endpoints
 # ============================================================
 
+
 class TestEvalEndpoints:
     """Tests for /eval/* routes."""
 
@@ -220,6 +235,7 @@ class TestEvalEndpoints:
 # ============================================================
 # LLM Endpoints
 # ============================================================
+
 
 class TestLLMEndpoints:
     """Tests for /llm/* routes."""

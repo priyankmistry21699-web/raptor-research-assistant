@@ -14,11 +14,12 @@ Features:
   - Fine-tuned LoRA adapter inference with model caching
   - Automatic fallback on timeout/error
 """
+
 import os
 import logging
 import threading
 import requests
-from typing import List, Dict, Optional, Any
+from typing import List, Dict, Any
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -62,6 +63,10 @@ _finetuned_cache: Dict[str, Any] = {}  # alias → {"model": ..., "tokenizer": .
 _finetuned_lock = threading.Lock()
 
 
+def _hf_revision() -> str:
+    return os.getenv("HF_MODEL_REVISION", "main")
+
+
 def _load_finetuned_model(config: Dict[str, Any]) -> Dict[str, Any]:
     """
     Load a fine-tuned model (base + LoRA adapter) into memory.
@@ -81,9 +86,15 @@ def _load_finetuned_model(config: Dict[str, Any]) -> Dict[str, Any]:
 
     base_model_id = config.get("base_model", "mistralai/Mistral-7B-v0.1")
 
-    logger.info(f"Loading fine-tuned model: base={base_model_id}, adapter={adapter_path}")
+    logger.info(
+        f"Loading fine-tuned model: base={base_model_id}, adapter={adapter_path}"
+    )
 
-    tokenizer = AutoTokenizer.from_pretrained(adapter_path, trust_remote_code=True)
+    tokenizer = AutoTokenizer.from_pretrained(
+        adapter_path,
+        trust_remote_code=True,
+        revision=_hf_revision(),
+    )
     if tokenizer.pad_token is None:
         tokenizer.pad_token = tokenizer.eos_token
 
@@ -91,6 +102,7 @@ def _load_finetuned_model(config: Dict[str, Any]) -> Dict[str, Any]:
     model_kwargs = {"trust_remote_code": True, "device_map": "auto"}
     try:
         from transformers import BitsAndBytesConfig
+
         bnb_config = BitsAndBytesConfig(
             load_in_4bit=True,
             bnb_4bit_compute_dtype=torch.float16,
@@ -101,7 +113,11 @@ def _load_finetuned_model(config: Dict[str, Any]) -> Dict[str, Any]:
     except ImportError:
         model_kwargs["torch_dtype"] = torch.float16
 
-    base_model = AutoModelForCausalLM.from_pretrained(base_model_id, **model_kwargs)
+    base_model = AutoModelForCausalLM.from_pretrained(
+        base_model_id,
+        revision=_hf_revision(),
+        **model_kwargs,
+    )
     model = PeftModel.from_pretrained(base_model, adapter_path)
     model.eval()
 
@@ -140,7 +156,9 @@ def _run_finetuned_inference(
             prompt_parts.append(f"{content}\n[INST] ")
     prompt_text = "".join(prompt_parts)
 
-    inputs = tokenizer(prompt_text, return_tensors="pt", truncation=True, max_length=2048)
+    inputs = tokenizer(
+        prompt_text, return_tensors="pt", truncation=True, max_length=2048
+    )
     inputs = {k: v.to(model.device) for k, v in inputs.items()}
 
     with torch.no_grad():
@@ -153,7 +171,7 @@ def _run_finetuned_inference(
         )
 
     # Decode only the new tokens (skip the input prompt tokens)
-    new_tokens = outputs[0][inputs["input_ids"].shape[1]:]
+    new_tokens = outputs[0][inputs["input_ids"].shape[1] :]
     return tokenizer.decode(new_tokens, skip_special_tokens=True).strip()
 
 
@@ -208,7 +226,9 @@ def run_llm_messages(
 
     # Route to local fine-tuned inference if this is a LoRA adapter model
     if config and config.get("is_finetuned"):
-        logger.info(f"LLM call (fine-tuned local): alias={model}, adapter={config.get('adapter_path')}, task={task}")
+        logger.info(
+            f"LLM call (fine-tuned local): alias={model}, adapter={config.get('adapter_path')}, task={task}"
+        )
         return _run_finetuned_inference(config, messages, max_tokens, temperature)
 
     # Standard API-based inference
@@ -238,13 +258,15 @@ def run_llm_messages(
 
     # Try the primary model first
     try:
-        response = requests.post(api_url, headers=headers, json=payload, timeout=timeout)
+        response = requests.post(
+            api_url, headers=headers, json=payload, timeout=timeout
+        )
         response.raise_for_status()
         data = response.json()
         return data["choices"][0]["message"]["content"]
     except Exception as e:
         logger.warning(f"LLM call failed for {model}: {e}")
-        
+
         # Fallback logic: if local model fails, try cloud model
         if model in ["mistral", "mistral:latest"] and "localhost" in api_url:
             logger.info("Falling back to Groq cloud model...")
@@ -254,16 +276,23 @@ def run_llm_messages(
                 fallback_key = fallback_config["api_key"]
                 fallback_model = fallback_config["model"]
                 fallback_timeout = fallback_config.get("timeout", 30)
-                
+
                 headers["Authorization"] = f"Bearer {fallback_key}"
                 payload["model"] = fallback_model
-                
-                logger.info(f"LLM fallback call: model={fallback_model}, url={fallback_url}")
-                response = requests.post(fallback_url, headers=headers, json=payload, timeout=fallback_timeout)
+
+                logger.info(
+                    f"LLM fallback call: model={fallback_model}, url={fallback_url}"
+                )
+                response = requests.post(
+                    fallback_url,
+                    headers=headers,
+                    json=payload,
+                    timeout=fallback_timeout,
+                )
                 response.raise_for_status()
                 data = response.json()
                 return data["choices"][0]["message"]["content"]
-        
+
         # If no fallback or fallback also fails, re-raise the original error
         raise e
 

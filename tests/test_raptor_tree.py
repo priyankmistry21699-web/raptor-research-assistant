@@ -3,7 +3,7 @@ Tests for app/core/raptor_index.py — RAPTOR tree operations.
 
 Uses actual paper trees from data/raw/paper_trees/ for integration testing.
 """
-import pytest
+
 from app.core.raptor_index import (
     load_tree,
     get_paper_info,

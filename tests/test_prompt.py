@@ -1,7 +1,7 @@
 """
 Tests for app/core/prompt_builder.py and app/core/prompt.py — Prompt construction.
 """
-import pytest
+
 from app.core.prompt_builder import (
     format_context_block,
     format_chat_history,
@@ -39,8 +39,12 @@ class TestPromptTemplates:
 
     def test_context_chunk_template_placeholders(self):
         required_placeholders = [
-            "{index}", "{paper}", "{arxiv_id}", "{topic}",
-            "{section_label}", "{text}",
+            "{index}",
+            "{paper}",
+            "{arxiv_id}",
+            "{topic}",
+            "{section_label}",
+            "{text}",
         ]
         for ph in required_placeholders:
             assert ph in CONTEXT_CHUNK_TEMPLATE, f"Missing placeholder {ph}"
@@ -95,7 +99,10 @@ class TestBuildPrompt:
             assert SYSTEM_PROMPTS[task] in prompt
 
     def test_with_chat_history(self, sample_chunks):
-        history = [{"role": "user", "content": "Hi"}, {"role": "assistant", "content": "Hello"}]
+        history = [
+            {"role": "user", "content": "Hi"},
+            {"role": "assistant", "content": "Hello"},
+        ]
         prompt = build_prompt(sample_chunks, "Follow up?", chat_history=history)
         assert CHAT_HISTORY_HEADER in prompt
 

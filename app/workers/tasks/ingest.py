@@ -7,7 +7,6 @@ Stages:
 """
 
 import hashlib
-import io
 import logging
 import re
 import uuid
@@ -44,6 +43,7 @@ def _update_job(session, job: IngestionJob, stage: str, progress: int):
 
 # ── Pipeline stage implementations ────────────────────────────────────
 
+
 def _validate(file_bytes: bytes, content_type: str) -> None:
     """Validate the uploaded file (type, size, malformed PDF check)."""
     allowed = {
@@ -62,6 +62,7 @@ def _extract_text(file_bytes: bytes, content_type: str) -> str:
     """Extract raw text from the document bytes."""
     if content_type == "application/pdf":
         import fitz  # PyMuPDF
+
         doc = fitz.open(stream=file_bytes, filetype="pdf")
         text_parts = [page.get_text() for page in doc]
         doc.close()
@@ -81,13 +82,13 @@ def _normalize_text(text: str) -> str:
       - Merge hyphenated line breaks (e.g. "computa-\\ntion" → "computation")
     """
     # Remove control chars (keep newline, tab, carriage return)
-    text = re.sub(r'[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]', '', text)
+    text = re.sub(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]", "", text)
     # Merge hyphenated line breaks
-    text = re.sub(r'-\s*\n\s*', '', text)
+    text = re.sub(r"-\s*\n\s*", "", text)
     # Collapse multiple blank lines into two newlines
-    text = re.sub(r'\n{3,}', '\n\n', text)
+    text = re.sub(r"\n{3,}", "\n\n", text)
     # Strip trailing whitespace per line
-    text = '\n'.join(line.rstrip() for line in text.split('\n'))
+    text = "\n".join(line.rstrip() for line in text.split("\n"))
     return text.strip()
 
 
@@ -100,14 +101,16 @@ def _chunk_text(text: str, chunk_size: int = 500, overlap: int = 50) -> list[dic
     while start < len(words):
         end = min(start + chunk_size, len(words))
         chunk_text = " ".join(words[start:end])
-        chunks.append({
-            "id": str(uuid.uuid4()),
-            "text": chunk_text,
-            "chunk_index": idx,
-            "word_start": start,
-            "word_end": end,
-            "text_hash": hashlib.sha256(chunk_text.encode()).hexdigest(),
-        })
+        chunks.append(
+            {
+                "id": str(uuid.uuid4()),
+                "text": chunk_text,
+                "chunk_index": idx,
+                "word_start": start,
+                "word_end": end,
+                "text_hash": hashlib.sha256(chunk_text.encode()).hexdigest(),
+            }
+        )
         start += chunk_size - overlap
         idx += 1
     return chunks
@@ -124,14 +127,19 @@ def _embed_chunks(chunks: list[dict]) -> list[list[float]]:
     return embeddings.tolist()
 
 
-def _build_raptor_tree(chunks: list[dict], embeddings: list[list[float]],
-                       collection_id: uuid.UUID, document_id: uuid.UUID) -> list[dict]:
+def _build_raptor_tree(
+    chunks: list[dict],
+    embeddings: list[list[float]],
+    collection_id: uuid.UUID,
+    document_id: uuid.UUID,
+) -> list[dict]:
     """
     Build RAPTOR hierarchical summaries using the real tree builder.
     Returns additional summary-level nodes to index alongside leaf chunks.
     """
     try:
         from app.core.raptor_tree_builder import build_raptor_tree
+
         return build_raptor_tree(
             chunks=chunks,
             embeddings=embeddings,
@@ -229,6 +237,7 @@ def _index_vectors(
 
 # ── Main Celery task ──────────────────────────────────────────────────
 
+
 @celery_app.task(
     bind=True,
     max_retries=3,
@@ -292,7 +301,9 @@ def run_ingestion_pipeline(self, job_id: str, document_id: str, collection_id: s
         # 6. RAPTOR tree (hierarchical summarisation)
         _update_job(session, job, "tree_building", 75)
         summary_nodes = _build_raptor_tree(chunks, embeddings, col_uuid, doc_uuid)
-        _persist_tree_nodes(session, chunks, doc_uuid, col_uuid, summary_nodes=summary_nodes)
+        _persist_tree_nodes(
+            session, chunks, doc_uuid, col_uuid, summary_nodes=summary_nodes
+        )
         _update_job(session, job, "tree_building", 80)
 
         # 7. Index
@@ -302,7 +313,9 @@ def run_ingestion_pipeline(self, job_id: str, document_id: str, collection_id: s
         all_embeddings = list(embeddings)
         for sn in summary_nodes:
             if sn.get("embedding"):
-                all_chunks.append({"id": sn["id"], "text": sn["text"], "chunk_index": -1})
+                all_chunks.append(
+                    {"id": sn["id"], "text": sn["text"], "chunk_index": -1}
+                )
                 all_embeddings.append(sn["embedding"])
         count = _index_vectors(col_uuid, all_chunks, all_embeddings, doc_uuid)
         _update_job(session, job, "indexing", 95)
@@ -314,7 +327,9 @@ def run_ingestion_pipeline(self, job_id: str, document_id: str, collection_id: s
         job.completed_at = datetime.now(timezone.utc)
         doc.status = "ready"
         session.commit()
-        logger.info("Ingestion completed for document %s — %d chunks", document_id, count)
+        logger.info(
+            "Ingestion completed for document %s — %d chunks", document_id, count
+        )
 
     except Exception as exc:
         session.rollback()

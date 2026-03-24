@@ -27,7 +27,9 @@ def _get_client():
     )
 
 
-def upload_file(key: str, data: BinaryIO, content_type: str = "application/octet-stream") -> str:
+def upload_file(
+    key: str, data: BinaryIO, content_type: str = "application/octet-stream"
+) -> str:
     """Upload a file-like object and return the S3 key."""
     client = _get_client()
     client.upload_fileobj(

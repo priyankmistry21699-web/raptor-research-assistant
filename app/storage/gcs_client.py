@@ -5,7 +5,6 @@ Provides the same interface as s3_client but backed by GCS.
 Used when STORAGE_PROVIDER=gcs.
 """
 
-import io
 import logging
 from typing import BinaryIO
 
@@ -63,7 +62,9 @@ def delete_file(key: str, bucket_name: str | None = None) -> None:
     logger.info("Deleted %s from GCS bucket %s", key, bucket.name)
 
 
-def generate_presigned_url(key: str, expires_in: int = 3600, bucket_name: str | None = None) -> str:
+def generate_presigned_url(
+    key: str, expires_in: int = 3600, bucket_name: str | None = None
+) -> str:
     """Generate a signed download URL."""
     import datetime
 

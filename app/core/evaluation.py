@@ -17,6 +17,7 @@ Uses:
   - LiteLLM wrapper for ragas LLM calls (routes through Ollama/Groq)
   - HuggingFace embeddings for ragas embedding calls (all-MiniLM-L6-v2)
 """
+
 import json
 import os
 import logging
@@ -26,8 +27,8 @@ from typing import Dict, Any, Optional, List
 logger = logging.getLogger(__name__)
 
 # Storage path for evaluation results
-EVAL_DIR = os.path.join(os.path.dirname(__file__), '..', '..', 'data', 'evaluation')
-EVAL_RESULTS_FILE = os.path.join(EVAL_DIR, 'eval_results.jsonl')
+EVAL_DIR = os.path.join(os.path.dirname(__file__), "..", "..", "data", "evaluation")
+EVAL_RESULTS_FILE = os.path.join(EVAL_DIR, "eval_results.jsonl")
 
 
 def _get_ragas_llm(model: str = "ollama/mistral:latest"):
@@ -50,6 +51,7 @@ def _get_ragas_llm(model: str = "ollama/mistral:latest"):
 def _get_ragas_embeddings(model_name: str = "sentence-transformers/all-MiniLM-L6-v2"):
     """Create a ragas-compatible embedding model."""
     from ragas.embeddings import HuggingfaceEmbeddings
+
     return HuggingfaceEmbeddings(model_name=model_name)
 
 
@@ -65,7 +67,9 @@ def _get_metrics(metric_names: Optional[List[str]] = None):
     """
     from ragas.metrics.collections.faithfulness import Faithfulness
     from ragas.metrics.collections.answer_relevancy import AnswerRelevancy
-    from ragas.metrics.collections.context_precision import ContextPrecisionWithoutReference
+    from ragas.metrics.collections.context_precision import (
+        ContextPrecisionWithoutReference,
+    )
     from ragas.metrics.collections.factual_correctness import FactualCorrectness
 
     available = {
@@ -84,7 +88,9 @@ def _get_metrics(metric_names: Optional[List[str]] = None):
         if name in available:
             selected.append(available[name])
         else:
-            logger.warning(f"Unknown metric '{name}', skipping. Available: {list(available.keys())}")
+            logger.warning(
+                f"Unknown metric '{name}', skipping. Available: {list(available.keys())}"
+            )
 
     return selected
 
@@ -92,8 +98,8 @@ def _get_metrics(metric_names: Optional[List[str]] = None):
 def _append_result(result: Dict[str, Any]):
     """Append an evaluation result to the JSONL file."""
     os.makedirs(EVAL_DIR, exist_ok=True)
-    with open(EVAL_RESULTS_FILE, 'a', encoding='utf-8') as f:
-        f.write(json.dumps(result, ensure_ascii=False, default=str) + '\n')
+    with open(EVAL_RESULTS_FILE, "a", encoding="utf-8") as f:
+        f.write(json.dumps(result, ensure_ascii=False, default=str) + "\n")
 
 
 def evaluate_single(
@@ -122,7 +128,9 @@ def evaluate_single(
 
     # If factual_correctness requested but no reference, remove it
     if metric_names and "factual_correctness" in metric_names and not reference:
-        logger.warning("factual_correctness requires a reference answer, removing from metrics")
+        logger.warning(
+            "factual_correctness requires a reference answer, removing from metrics"
+        )
         metric_names = [m for m in metric_names if m != "factual_correctness"]
 
     sample = SingleTurnSample(
@@ -197,12 +205,14 @@ def evaluate_batch(
 
     ragas_samples = []
     for s in samples:
-        ragas_samples.append(SingleTurnSample(
-            user_input=s["question"],
-            response=s["answer"],
-            retrieved_contexts=s.get("contexts", []),
-            reference=s.get("reference", ""),
-        ))
+        ragas_samples.append(
+            SingleTurnSample(
+                user_input=s["question"],
+                response=s["answer"],
+                retrieved_contexts=s.get("contexts", []),
+                reference=s.get("reference", ""),
+            )
+        )
 
     dataset = EvaluationDataset(samples=ragas_samples)
     metrics = _get_metrics(metric_names)
@@ -225,16 +235,22 @@ def evaluate_batch(
 
     # Per-sample scores
     per_sample = []
-    metric_cols = [c for c in result_df.columns if c not in ("user_input", "response", "retrieved_contexts", "reference")]
+    metric_cols = [
+        c
+        for c in result_df.columns
+        if c not in ("user_input", "response", "retrieved_contexts", "reference")
+    ]
     for idx, row in result_df.iterrows():
         sample_scores = {}
         for col in metric_cols:
             val = row[col]
             sample_scores[col] = float(val) if val is not None else None
-        per_sample.append({
-            "question": samples[idx]["question"],
-            "scores": sample_scores,
-        })
+        per_sample.append(
+            {
+                "question": samples[idx]["question"],
+                "scores": sample_scores,
+            }
+        )
 
     # Aggregate statistics
     aggregates = {}
@@ -301,24 +317,28 @@ def evaluate_pipeline(
 
     for i, query in enumerate(queries):
         # Step 1: Retrieve
-        results = retriever.retrieve(query=query, top_k=top_k, include_tree_context=True)
+        results = retriever.retrieve(
+            query=query, top_k=top_k, include_tree_context=True
+        )
         contexts = [r.get("text", "") for r in results]
 
         # Step 2: Build prompt
         chunks = []
         for r in results:
             ctx = r.get("tree_context", {})
-            chunks.append({
-                "arxiv_id": r.get("arxiv_id", ""),
-                "chunk_index": r.get("chunk_index", 0),
-                "chunk_text": r.get("text", ""),
-                "section_num": ctx.get("section_num", ""),
-                "section_title": ctx.get("section_title", ""),
-                "section_summary": ctx.get("section_summary", ""),
-                "topic": ctx.get("topic", ""),
-                "topic_summary": ctx.get("topic_summary", ""),
-                "paper_title": ctx.get("paper_title", ""),
-            })
+            chunks.append(
+                {
+                    "arxiv_id": r.get("arxiv_id", ""),
+                    "chunk_index": r.get("chunk_index", 0),
+                    "chunk_text": r.get("text", ""),
+                    "section_num": ctx.get("section_num", ""),
+                    "section_title": ctx.get("section_title", ""),
+                    "section_summary": ctx.get("section_summary", ""),
+                    "topic": ctx.get("topic", ""),
+                    "topic_summary": ctx.get("topic_summary", ""),
+                    "paper_title": ctx.get("paper_title", ""),
+                }
+            )
 
         messages = build_messages(chunks, query, task=task)
 
@@ -334,7 +354,7 @@ def evaluate_pipeline(
             sample["reference"] = references[i]
 
         samples.append(sample)
-        logger.info(f"Pipeline eval [{i+1}/{len(queries)}]: {query[:60]}...")
+        logger.info(f"Pipeline eval [{i + 1}/{len(queries)}]: {query[:60]}...")
 
     # Step 4: Evaluate all samples
     return evaluate_batch(
@@ -405,7 +425,7 @@ def get_eval_history(limit: int = 50) -> List[Dict[str, Any]]:
     if not os.path.exists(EVAL_RESULTS_FILE):
         return []
     entries = []
-    with open(EVAL_RESULTS_FILE, 'r', encoding='utf-8') as f:
+    with open(EVAL_RESULTS_FILE, "r", encoding="utf-8") as f:
         for line in f:
             line = line.strip()
             if line:

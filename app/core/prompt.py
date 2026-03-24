@@ -16,11 +16,6 @@ SYSTEM_PROMPTS = {
         "Always cite paper titles and section numbers when referencing information. "
         "If the context does not contain enough information, say so clearly."
     ),
-    "conversational": (
-        "You are a helpful research assistant specializing in machine learning and deep learning. "
-        "You can have normal conversations and also help with research questions about ML/DL papers. "
-        "Be friendly and conversational while being knowledgeable about the field."
-    ),
     "summarize": (
         "You are a research assistant that creates clear, concise summaries of academic papers. "
         "Use ONLY the provided context. Highlight key contributions, methods, and findings. "
@@ -37,6 +32,12 @@ SYSTEM_PROMPTS = {
         "Use examples from the papers when possible and cite your sources."
     ),
 }
+
+CONVERSATIONAL_SYSTEM_PROMPT = (
+    "You are a helpful research assistant specializing in machine learning and deep learning. "
+    "You can have normal conversations and also help with research questions about ML/DL papers. "
+    "Be friendly and conversational while being knowledgeable about the field."
+)
 
 
 # ============================================================

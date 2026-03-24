@@ -17,6 +17,7 @@ Each feedback entry stores:
 Storage: JSONL file (one JSON object per line) for easy appending and streaming reads.
 This feeds into Section 11 (Preference Dataset Creation) for RLHF/DPO training.
 """
+
 import json
 import os
 import threading
@@ -28,9 +29,9 @@ FEEDBACK_TYPES = {"helpful", "incorrect", "hallucination", "correction"}
 
 # Default storage path
 DEFAULT_FEEDBACK_DIR = os.path.join(
-    os.path.dirname(__file__), '..', '..', 'data', 'feedback'
+    os.path.dirname(__file__), "..", "..", "data", "feedback"
 )
-DEFAULT_FEEDBACK_FILE = os.path.join(DEFAULT_FEEDBACK_DIR, 'feedback.jsonl')
+DEFAULT_FEEDBACK_FILE = os.path.join(DEFAULT_FEEDBACK_DIR, "feedback.jsonl")
 
 
 class FeedbackEntry:
@@ -96,8 +97,8 @@ class FeedbackStore:
         """Append a feedback entry to the JSONL file."""
         record = entry.to_dict()
         with self._lock:
-            with open(self._filepath, 'a', encoding='utf-8') as f:
-                f.write(json.dumps(record, ensure_ascii=False) + '\n')
+            with open(self._filepath, "a", encoding="utf-8") as f:
+                f.write(json.dumps(record, ensure_ascii=False) + "\n")
         return record
 
     def submit(
@@ -132,7 +133,7 @@ class FeedbackStore:
             return []
         entries = []
         with self._lock:
-            with open(self._filepath, 'r', encoding='utf-8') as f:
+            with open(self._filepath, "r", encoding="utf-8") as f:
                 for line in f:
                     line = line.strip()
                     if line:
@@ -165,7 +166,7 @@ class FeedbackStore:
         if not os.path.exists(self._filepath):
             return 0
         with self._lock:
-            with open(self._filepath, 'r', encoding='utf-8') as f:
+            with open(self._filepath, "r", encoding="utf-8") as f:
                 return sum(1 for line in f if line.strip())
 
 

@@ -13,9 +13,11 @@ Each prompt includes:
   3. User question
   4. Chat history (if provided, for multi-turn conversations)
 """
+
 from typing import List, Dict, Any, Optional
 
 from app.core.prompt import (
+    CONVERSATIONAL_SYSTEM_PROMPT,
     SYSTEM_PROMPTS,
     TASK_INSTRUCTIONS,
     CONTEXT_HEADER,
@@ -44,7 +46,9 @@ def format_context_block(chunk: Dict[str, Any], index: int) -> str:
         arxiv_id=arxiv_id,
         topic=topic,
         topic_summary=topic_summary,
-        section_label=f"{section_num}: {section_title}" if section_num else section_title,
+        section_label=f"{section_num}: {section_title}"
+        if section_num
+        else section_title,
         section_summary=section_summary,
         text=text,
     )
@@ -120,10 +124,10 @@ def build_messages(
         [{'role': 'system', 'content': '...'}, {'role': 'user', 'content': '...'}]
     """
     system = SYSTEM_PROMPTS.get(task, SYSTEM_PROMPTS["qa"])
-    
+
     # For conversational messages (no chunks), use conversational system prompt
     if not chunks and task == "qa":
-        system = SYSTEM_PROMPTS["conversational"]
+        system = CONVERSATIONAL_SYSTEM_PROMPT
 
     # Build user message with context
     if chunks:

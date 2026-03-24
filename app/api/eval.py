@@ -9,6 +9,7 @@ Endpoints:
   GET  /eval/history         — Get recent evaluation results
   GET  /eval/stats           — Get aggregate evaluation statistics
 """
+
 import os
 import sys
 
@@ -16,7 +17,7 @@ from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 from typing import List, Dict, Any, Optional
 
-sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '../..')))
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "../..")))
 
 from app.core.evaluation import (
     evaluate_single,
@@ -32,6 +33,7 @@ router = APIRouter(prefix="/eval", tags=["evaluation"])
 
 # --- Request / Response models ---
 
+
 class EvalSingleRequest(BaseModel):
     question: str
     answer: str
@@ -40,10 +42,12 @@ class EvalSingleRequest(BaseModel):
     metric_names: Optional[List[str]] = None
     llm_model: str = "ollama/mistral:latest"
 
+
 class EvalBatchRequest(BaseModel):
     samples: List[Dict[str, Any]]
     metric_names: Optional[List[str]] = None
     llm_model: str = "ollama/mistral:latest"
+
 
 class EvalPipelineRequest(BaseModel):
     queries: List[str]
@@ -53,6 +57,7 @@ class EvalPipelineRequest(BaseModel):
     metric_names: Optional[List[str]] = None
     llm_model: str = "ollama/mistral:latest"
     references: Optional[List[str]] = None
+
 
 class CompareRequest(BaseModel):
     queries: List[str]
@@ -64,6 +69,7 @@ class CompareRequest(BaseModel):
 
 
 # --- Endpoints ---
+
 
 @router.post("/single")
 def eval_single(req: EvalSingleRequest):
@@ -77,7 +83,9 @@ def eval_single(req: EvalSingleRequest):
       - factual_correctness: Is the answer factually correct? (needs reference)
     """
     if not req.contexts:
-        raise HTTPException(status_code=400, detail="At least one context string is required")
+        raise HTTPException(
+            status_code=400, detail="At least one context string is required"
+        )
 
     result = evaluate_single(
         question=req.question,
@@ -105,13 +113,10 @@ def eval_batch(req: EvalBatchRequest):
         if "question" not in s or "answer" not in s:
             raise HTTPException(
                 status_code=400,
-                detail=f"Sample {i} missing required fields: question, answer"
+                detail=f"Sample {i} missing required fields: question, answer",
             )
         if "contexts" not in s or not s["contexts"]:
-            raise HTTPException(
-                status_code=400,
-                detail=f"Sample {i} missing contexts"
-            )
+            raise HTTPException(status_code=400, detail=f"Sample {i} missing contexts")
 
     result = evaluate_batch(
         samples=req.samples,
@@ -157,7 +162,9 @@ def eval_compare(req: CompareRequest):
     if not req.queries:
         raise HTTPException(status_code=400, detail="At least one query is required")
     if len(req.models) < 2:
-        raise HTTPException(status_code=400, detail="At least 2 models are required for comparison")
+        raise HTTPException(
+            status_code=400, detail="At least 2 models are required for comparison"
+        )
 
     result = compare_models(
         queries=req.queries,

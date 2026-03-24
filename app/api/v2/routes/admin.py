@@ -9,7 +9,7 @@ GET  /admin/audit                — Query audit logs
 
 import logging
 import uuid
-from datetime import datetime, timezone
+from datetime import datetime
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from pydantic import BaseModel, Field
@@ -33,6 +33,7 @@ router = APIRouter(prefix="/admin", tags=["admin"])
 
 
 # ── Stats ─────────────────────────────────────────────────────────────
+
 
 class PlatformStats(BaseModel):
     total_users: int
@@ -70,6 +71,7 @@ def get_stats(
 
 
 # ── Model Registry ───────────────────────────────────────────────────
+
 
 class ModelRegisterRequest(BaseModel):
     name: str = Field(min_length=1, max_length=200)
@@ -135,13 +137,16 @@ def register_model(
         is_active=req.is_active,
     )
     db.add(model)
-    log_audit_from_request(db, request, action="model.register", resource="model", resource_id=model.id)
+    log_audit_from_request(
+        db, request, action="model.register", resource="model", resource_id=model.id
+    )
     db.commit()
     db.refresh(model)
     return model
 
 
 # ── Audit Logs ────────────────────────────────────────────────────────
+
 
 class AuditLogOut(BaseModel):
     id: uuid.UUID

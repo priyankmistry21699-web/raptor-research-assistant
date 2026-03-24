@@ -14,17 +14,19 @@ Workflow:
   4. Save adapter weights + tokenizer to models/<run_name>/
   5. Optionally merge adapter into base model for standalone serving
 """
+
 import os
 import json
 import logging
 import threading
 from datetime import datetime, timezone
+from pathlib import Path
 from typing import Dict, Any, Optional, List
 
 logger = logging.getLogger(__name__)
 
 # Paths
-MODELS_DIR = os.path.join(os.path.dirname(__file__), '..', '..', 'models')
+MODELS_DIR = os.path.join(os.path.dirname(__file__), "..", "..", "models")
 DEFAULT_BASE_MODEL = "mistralai/Mistral-7B-v0.1"
 
 # Track active training runs
@@ -55,11 +57,15 @@ def list_finetuned_models() -> List[Dict[str, str]]:
         config_path = os.path.join(model_dir, "training_config.json")
         info = {"name": name, "path": model_dir}
         if os.path.exists(config_path):
-            with open(config_path, 'r') as f:
+            with open(config_path, "r") as f:
                 info["config"] = json.load(f)
         # Check if adapter files exist
-        info["has_adapter"] = os.path.exists(os.path.join(model_dir, "adapter_config.json"))
-        info["has_tokenizer"] = os.path.exists(os.path.join(model_dir, "tokenizer_config.json"))
+        info["has_adapter"] = os.path.exists(
+            os.path.join(model_dir, "adapter_config.json")
+        )
+        info["has_tokenizer"] = os.path.exists(
+            os.path.join(model_dir, "tokenizer_config.json")
+        )
         models.append(info)
     return models
 
@@ -104,8 +110,8 @@ def run_dpo_training(
     try:
         import torch
         from datasets import Dataset
-        from transformers import AutoModelForCausalLM, AutoTokenizer, TrainingArguments
-        from peft import LoraConfig, get_peft_model
+        from transformers import AutoModelForCausalLM, AutoTokenizer
+        from peft import LoraConfig
         from trl import DPOTrainer, DPOConfig
     except ImportError as e:
         return {
@@ -161,14 +167,18 @@ def run_dpo_training(
             "gradient_accumulation_steps": gradient_accumulation_steps,
             "started_at": datetime.now(timezone.utc).isoformat(),
         }
-        with open(os.path.join(output_dir, "training_config.json"), 'w') as f:
+        with open(os.path.join(output_dir, "training_config.json"), "w") as f:
             json.dump(train_config, f, indent=2)
 
         # --- Load tokenizer ---
         with _training_lock:
             _training_status["progress"] = "loading_tokenizer"
 
-        tokenizer = AutoTokenizer.from_pretrained(base_model, trust_remote_code=True)
+        tokenizer = AutoTokenizer.from_pretrained(
+            base_model,
+            trust_remote_code=True,
+            revision=os.getenv("HF_MODEL_REVISION", "main"),
+        )
         if tokenizer.pad_token is None:
             tokenizer.pad_token = tokenizer.eos_token
 
@@ -182,6 +192,7 @@ def run_dpo_training(
         # Try 4-bit quantization if bitsandbytes available (saves memory)
         try:
             from transformers import BitsAndBytesConfig
+
             bnb_config = BitsAndBytesConfig(
                 load_in_4bit=True,
                 bnb_4bit_compute_dtype=torch.float16,
@@ -197,6 +208,7 @@ def run_dpo_training(
         model = AutoModelForCausalLM.from_pretrained(
             base_model,
             device_map=device_map,
+            revision=os.getenv("HF_MODEL_REVISION", "main"),
             **model_kwargs,
         )
 
@@ -273,10 +285,12 @@ def run_dpo_training(
         metrics = {
             "train_loss": train_result.training_loss,
             "train_runtime": train_result.metrics.get("train_runtime", 0),
-            "train_samples_per_second": train_result.metrics.get("train_samples_per_second", 0),
+            "train_samples_per_second": train_result.metrics.get(
+                "train_samples_per_second", 0
+            ),
             "completed_at": datetime.now(timezone.utc).isoformat(),
         }
-        with open(os.path.join(output_dir, "training_metrics.json"), 'w') as f:
+        with open(os.path.join(output_dir, "training_metrics.json"), "w") as f:
             json.dump(metrics, f, indent=2)
 
         logger.info(f"Training complete. Adapter saved to {output_dir}")
@@ -306,7 +320,7 @@ def run_dpo_training(
             "error": str(e),
             "failed_at": datetime.now(timezone.utc).isoformat(),
         }
-        with open(os.path.join(output_dir, "training_error.json"), 'w') as f:
+        with open(os.path.join(output_dir, "training_error.json"), "w") as f:
             json.dump(error_result, f, indent=2)
 
         with _training_lock:
@@ -317,7 +331,9 @@ def run_dpo_training(
         return error_result
 
 
-def register_finetuned_model(run_name: str, alias: Optional[str] = None) -> Dict[str, Any]:
+def register_finetuned_model(
+    run_name: str, alias: Optional[str] = None
+) -> Dict[str, Any]:
     """
     Register a fine-tuned adapter in the LLM model registry for inference.
 
@@ -338,7 +354,7 @@ def register_finetuned_model(run_name: str, alias: Optional[str] = None) -> Dict
     if not os.path.exists(config_path):
         return {"status": "error", "error": "No training_config.json found"}
 
-    with open(config_path, 'r') as f:
+    with open(config_path, "r") as f:
         config = json.load(f)
 
     model_alias = alias or f"finetuned-{run_name}"
@@ -365,6 +381,7 @@ def register_finetuned_model(run_name: str, alias: Optional[str] = None) -> Dict
 
 # --- Paper-Specific Learning & Debate Functions ---
 
+
 def fine_tune_on_paper(
     arxiv_id: str,
     learning_rate: float = 2e-5,
@@ -389,23 +406,19 @@ def fine_tune_on_paper(
         Dict with training results and model path
     """
     from app.core.raptor_index import load_tree, get_chunks
-    from app.core.prompt_builder import build_messages
 
     # Check if paper exists
     G = load_tree(arxiv_id)
     if G is None:
         return {
             "status": "error",
-            "error": f"Paper {arxiv_id} not found in RAPTOR trees"
+            "error": f"Paper {arxiv_id} not found in RAPTOR trees",
         }
 
     # Extract all chunks from the paper
     all_chunks = get_chunks(G, None)  # Get all chunks in the tree
     if not all_chunks:
-        return {
-            "status": "error",
-            "error": f"No chunks found for paper {arxiv_id}"
-        }
+        return {"status": "error", "error": f"No chunks found for paper {arxiv_id}"}
 
     # Create synthetic Q&A pairs from the paper content
     qa_pairs = _generate_paper_qa_pairs(arxiv_id, all_chunks)
@@ -413,7 +426,7 @@ def fine_tune_on_paper(
     if len(qa_pairs) < 2:
         return {
             "status": "error",
-            "error": f"Could not generate enough Q&A pairs from paper {arxiv_id} (got {len(qa_pairs)})"
+            "error": f"Could not generate enough Q&A pairs from paper {arxiv_id} (got {len(qa_pairs)})",
         }
 
     # Convert to preference pairs format for DPO
@@ -422,11 +435,13 @@ def fine_tune_on_paper(
         # Create chosen/rejected pairs
         # For simplicity, we'll use the actual answer as "chosen"
         # and a slightly modified version as "rejected"
-        preference_pairs.append({
-            "prompt": qa["question"],
-            "chosen": qa["answer"],
-            "rejected": _generate_rejected_answer(qa["answer"])
-        })
+        preference_pairs.append(
+            {
+                "prompt": qa["question"],
+                "chosen": qa["answer"],
+                "rejected": _generate_rejected_answer(qa["answer"]),
+            }
+        )
 
     # Run DPO training with paper-specific name
     run_name = f"paper_{arxiv_id}_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
@@ -468,11 +483,13 @@ def _generate_paper_qa_pairs(arxiv_id: str, chunks: List[Dict]) -> List[Dict[str
         # Use the chunk as the answer
         answer = text
 
-        qa_pairs.append({
-            "question": question,
-            "answer": answer,
-            "chunk_index": chunk.get("chunk_index", i)
-        })
+        qa_pairs.append(
+            {
+                "question": question,
+                "answer": answer,
+                "chunk_index": chunk.get("chunk_index", i),
+            }
+        )
 
     return qa_pairs
 
@@ -528,20 +545,24 @@ def get_paper_specific_models(arxiv_id: str = None) -> List[Dict[str, Any]]:
                 config_file = model_dir / "config.json"
                 if config_file.exists():
                     try:
-                        with open(config_file, 'r') as f:
+                        with open(config_file, "r") as f:
                             config = json.load(f)
 
                         # Extract paper ID from model name
                         model_name = model_dir.name
-                        paper_id = model_name.split("_")[1] if "_" in model_name else "unknown"
+                        paper_id = (
+                            model_name.split("_")[1] if "_" in model_name else "unknown"
+                        )
 
-                        paper_models.append({
-                            "run_name": model_name,
-                            "arxiv_id": paper_id,
-                            "base_model": config.get("base_model", "unknown"),
-                            "created_at": config.get("created_at", "unknown"),
-                            "config": config
-                        })
+                        paper_models.append(
+                            {
+                                "run_name": model_name,
+                                "arxiv_id": paper_id,
+                                "base_model": config.get("base_model", "unknown"),
+                                "created_at": config.get("created_at", "unknown"),
+                                "config": config,
+                            }
+                        )
                     except Exception:
                         # Skip invalid config files
                         continue
@@ -555,48 +576,14 @@ def get_paper_specific_models(arxiv_id: str = None) -> List[Dict[str, Any]]:
 
 def _generate_rejected_answer(chosen_answer: str) -> str:
     """
-    Generate a rejected answer for DPO training by slightly modifying the chosen answer.
-    """
-    # Simple rejection generation - in practice, this could be more sophisticated
-    # For now, we'll create a slightly different version
-    words = chosen_answer.split()
-    if len(words) > 10:
-        # Remove some words and add generic text
-        modified = " ".join(words[:len(words)//2]) + " and other related concepts are discussed."
-    else:
-        modified = "This section discusses various technical concepts and approaches."
-
-    return modified
-
-
-def _generate_rejected_answer(chosen_answer: str) -> str:
-    """
     Generate a slightly incorrect "rejected" answer for DPO training.
     """
     # Simple rejection generation - truncate or slightly modify
     if len(chosen_answer) > 100:
-        return chosen_answer[:len(chosen_answer)//2] + "..."
+        return chosen_answer[: len(chosen_answer) // 2] + "..."
     else:
-        return chosen_answer.replace("the", "a", 1) if "the" in chosen_answer else chosen_answer + " (incomplete)"
-
-
-def get_paper_specific_models() -> Dict[str, List[str]]:
-    """
-    Get all available paper-specific fine-tuned models grouped by paper.
-    """
-    from app.core.llm_client import list_available_models
-
-    models = list_available_models()
-    paper_models = {}
-
-    for model_name, model_info in models.items():
-        if model_name.startswith("paper_"):
-            # Extract arxiv_id from model name (format: paper_ARXIVID_TIMESTAMP)
-            parts = model_name.split("_")
-            if len(parts) >= 2:
-                arxiv_id = parts[1]
-                if arxiv_id not in paper_models:
-                    paper_models[arxiv_id] = []
-                paper_models[arxiv_id].append(model_name)
-
-    return paper_models
+        return (
+            chosen_answer.replace("the", "a", 1)
+            if "the" in chosen_answer
+            else chosen_answer + " (incomplete)"
+        )

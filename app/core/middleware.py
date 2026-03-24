@@ -60,7 +60,9 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
         response.headers["X-Frame-Options"] = "DENY"
         response.headers["X-XSS-Protection"] = "0"
         response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
-        response.headers["Permissions-Policy"] = "camera=(), microphone=(), geolocation=()"
+        response.headers["Permissions-Policy"] = (
+            "camera=(), microphone=(), geolocation=()"
+        )
         if settings.environment == "production":
             response.headers["Strict-Transport-Security"] = (
                 "max-age=31536000; includeSubDomains"
@@ -77,15 +79,17 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
 
     # Routes with stricter limits
     STRICT_PREFIXES = ("/api/v2/generate",)
-    DEFAULT_MAX = 120       # requests per window
-    DEFAULT_WINDOW = 60     # seconds
-    STRICT_MAX = 20         # stricter for generation
+    DEFAULT_MAX = 120  # requests per window
+    DEFAULT_WINDOW = 60  # seconds
+    STRICT_MAX = 20  # stricter for generation
     STRICT_WINDOW = 60
 
     async def dispatch(self, request: Request, call_next):
         # Skip rate limiting for health/docs
         path = request.url.path
-        if path.startswith(("/api/v2/health", "/docs", "/redoc", "/openapi.json", "/health")):
+        if path.startswith(
+            ("/api/v2/health", "/docs", "/redoc", "/openapi.json", "/health")
+        ):
             return await call_next(request)
 
         # Determine identity key
@@ -102,6 +106,7 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
 
         try:
             from app.storage.cache import check_rate_limit
+
             allowed = check_rate_limit(rl_key, max_req, window)
         except Exception:
             # If Redis is down, allow the request (fail-open)
@@ -109,6 +114,7 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
 
         if not allowed:
             from fastapi.responses import JSONResponse
+
             return JSONResponse(
                 status_code=429,
                 content={"detail": "Rate limit exceeded"},

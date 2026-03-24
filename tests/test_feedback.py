@@ -1,8 +1,8 @@
 """
 Tests for app/core/feedback.py — FeedbackEntry and FeedbackStore.
 """
+
 import os
-import json
 import pytest
 from app.core.feedback import FeedbackEntry, FeedbackStore, FEEDBACK_TYPES
 
@@ -24,23 +24,31 @@ class TestFeedbackEntry:
     def test_invalid_feedback_type(self):
         with pytest.raises(ValueError, match="Invalid feedback type"):
             FeedbackEntry(
-                session_id="s1", question="Q", answer="A",
+                session_id="s1",
+                question="Q",
+                answer="A",
                 feedback_type="invalid_type",
             )
 
     def test_all_feedback_types_valid(self):
         for ftype in FEEDBACK_TYPES:
             entry = FeedbackEntry(
-                session_id="s1", question="Q", answer="A",
+                session_id="s1",
+                question="Q",
+                answer="A",
                 feedback_type=ftype,
             )
             assert entry.feedback_type == ftype
 
     def test_to_dict(self):
         entry = FeedbackEntry(
-            session_id="s1", question="Q", answer="A",
-            feedback_type="correction", correction="Better answer",
-            model_used="mistral", task="qa",
+            session_id="s1",
+            question="Q",
+            answer="A",
+            feedback_type="correction",
+            correction="Better answer",
+            model_used="mistral",
+            task="qa",
             citations=[{"arxiv_id": "123"}],
         )
         d = entry.to_dict()
@@ -53,7 +61,9 @@ class TestFeedbackEntry:
 
     def test_defaults(self):
         entry = FeedbackEntry(
-            session_id="s1", question="Q", answer="A",
+            session_id="s1",
+            question="Q",
+            answer="A",
             feedback_type="helpful",
         )
         assert entry.correction == ""
@@ -72,7 +82,9 @@ class TestFeedbackStore:
 
     def test_add_entry(self, feedback_store):
         entry = FeedbackEntry(
-            session_id="s1", question="Q", answer="A",
+            session_id="s1",
+            question="Q",
+            answer="A",
             feedback_type="helpful",
         )
         result = feedback_store.add(entry)
@@ -82,38 +94,67 @@ class TestFeedbackStore:
 
     def test_submit_shortcut(self, feedback_store):
         result = feedback_store.submit(
-            session_id="s1", question="Q", answer="A",
-            feedback_type="incorrect", model_used="mistral",
+            session_id="s1",
+            question="Q",
+            answer="A",
+            feedback_type="incorrect",
+            model_used="mistral",
         )
         assert result["session_id"] == "s1"
         assert result["feedback_type"] == "incorrect"
         assert feedback_store.count() == 1
 
     def test_get_all(self, feedback_store):
-        feedback_store.submit(session_id="s1", question="Q1", answer="A1", feedback_type="helpful")
-        feedback_store.submit(session_id="s2", question="Q2", answer="A2", feedback_type="incorrect")
+        feedback_store.submit(
+            session_id="s1", question="Q1", answer="A1", feedback_type="helpful"
+        )
+        feedback_store.submit(
+            session_id="s2", question="Q2", answer="A2", feedback_type="incorrect"
+        )
         entries = feedback_store.get_all()
         assert len(entries) == 2
 
     def test_get_by_session(self, feedback_store):
-        feedback_store.submit(session_id="s1", question="Q1", answer="A1", feedback_type="helpful")
-        feedback_store.submit(session_id="s2", question="Q2", answer="A2", feedback_type="incorrect")
-        feedback_store.submit(session_id="s1", question="Q3", answer="A3", feedback_type="correction", correction="Fixed")
+        feedback_store.submit(
+            session_id="s1", question="Q1", answer="A1", feedback_type="helpful"
+        )
+        feedback_store.submit(
+            session_id="s2", question="Q2", answer="A2", feedback_type="incorrect"
+        )
+        feedback_store.submit(
+            session_id="s1",
+            question="Q3",
+            answer="A3",
+            feedback_type="correction",
+            correction="Fixed",
+        )
         entries = feedback_store.get_by_session("s1")
         assert len(entries) == 2
         assert all(e["session_id"] == "s1" for e in entries)
 
     def test_get_by_type(self, feedback_store):
-        feedback_store.submit(session_id="s1", question="Q1", answer="A1", feedback_type="helpful")
-        feedback_store.submit(session_id="s2", question="Q2", answer="A2", feedback_type="helpful")
-        feedback_store.submit(session_id="s3", question="Q3", answer="A3", feedback_type="incorrect")
+        feedback_store.submit(
+            session_id="s1", question="Q1", answer="A1", feedback_type="helpful"
+        )
+        feedback_store.submit(
+            session_id="s2", question="Q2", answer="A2", feedback_type="helpful"
+        )
+        feedback_store.submit(
+            session_id="s3", question="Q3", answer="A3", feedback_type="incorrect"
+        )
         entries = feedback_store.get_by_type("helpful")
         assert len(entries) == 2
 
     def test_get_stats(self, feedback_store):
-        feedback_store.submit(session_id="s1", question="Q1", answer="A1", feedback_type="helpful")
-        feedback_store.submit(session_id="s1", question="Q2", answer="A2", feedback_type="incorrect")
-        feedback_store.submit(session_id="s2", question="Q3", answer="A3", feedback_type="helpful")
+        feedback_store.submit(
+            session_id="s1", question="Q1", answer="A1", feedback_type="helpful"
+        )
+        feedback_store.submit(
+            session_id="s1", question="Q2", answer="A2", feedback_type="incorrect"
+        )
+        feedback_store.submit(
+            session_id="s2", question="Q3", answer="A3", feedback_type="helpful"
+        )
         stats = feedback_store.get_stats()
         assert stats["total"] == 3
         assert stats["by_type"]["helpful"] == 2
@@ -121,9 +162,11 @@ class TestFeedbackStore:
         assert stats["unique_sessions"] == 2
 
     def test_persistence(self, tmp_dir):
-        filepath = os.path.join(str(tmp_dir), 'persist_test.jsonl')
+        filepath = os.path.join(str(tmp_dir), "persist_test.jsonl")
         store1 = FeedbackStore(filepath=filepath)
-        store1.submit(session_id="s1", question="Q", answer="A", feedback_type="helpful")
+        store1.submit(
+            session_id="s1", question="Q", answer="A", feedback_type="helpful"
+        )
 
         # New store reading same file
         store2 = FeedbackStore(filepath=filepath)

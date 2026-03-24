@@ -4,18 +4,16 @@ Pytest configuration & shared fixtures for RAPTOR Research Assistant tests.
 Fixtures provide isolated instances of core components (sessions, feedback, preferences)
 using temporary directories so tests don't modify production data.
 """
+
 import os
 import sys
-import json
-import tempfile
-import shutil
 
 import pytest
 
 # Ensure project root is on path
-sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
-BASE_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
+BASE_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 
 
 @pytest.fixture
@@ -28,8 +26,9 @@ def tmp_dir(tmp_path):
 def config():
     """Load project config.yaml as a dict."""
     import yaml
-    config_path = os.path.join(BASE_DIR, 'config.yaml')
-    with open(config_path, 'r') as f:
+
+    config_path = os.path.join(BASE_DIR, "config.yaml")
+    with open(config_path, "r") as f:
         return yaml.safe_load(f)
 
 
@@ -37,6 +36,7 @@ def config():
 def session_manager():
     """Provide a fresh SessionManager instance (isolated from global singleton)."""
     from app.core.session import SessionManager
+
     return SessionManager(max_sessions=10)
 
 
@@ -44,7 +44,8 @@ def session_manager():
 def feedback_store(tmp_dir):
     """Provide a FeedbackStore writing to a temp file."""
     from app.core.feedback import FeedbackStore
-    filepath = os.path.join(str(tmp_dir), 'test_feedback.jsonl')
+
+    filepath = os.path.join(str(tmp_dir), "test_feedback.jsonl")
     return FeedbackStore(filepath=filepath)
 
 
@@ -52,7 +53,8 @@ def feedback_store(tmp_dir):
 def preference_store(tmp_dir, feedback_store):
     """Provide a PreferenceStore writing to a temp file."""
     from app.core.preference import PreferenceStore
-    filepath = os.path.join(str(tmp_dir), 'test_preferences.jsonl')
+
+    filepath = os.path.join(str(tmp_dir), "test_preferences.jsonl")
     return PreferenceStore(filepath=filepath)
 
 
@@ -96,5 +98,7 @@ def sample_feedback_entry():
         "correction": "",
         "model_used": "mistral",
         "task": "qa",
-        "citations": [{"arxiv_id": "1706.03762", "paper_title": "Attention Is All You Need"}],
+        "citations": [
+            {"arxiv_id": "1706.03762", "paper_title": "Attention Is All You Need"}
+        ],
     }

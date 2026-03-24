@@ -11,6 +11,7 @@ from pydantic import BaseModel, Field
 
 # ── Generic ───────────────────────────────────────────────────────────
 
+
 class Message(BaseModel):
     detail: str
 
@@ -24,6 +25,7 @@ class PaginatedResponse(BaseModel):
 
 # ── Auth / User ───────────────────────────────────────────────────────
 
+
 class UserOut(BaseModel):
     id: uuid.UUID
     email: str
@@ -35,6 +37,7 @@ class UserOut(BaseModel):
 
 
 # ── Workspaces ────────────────────────────────────────────────────────
+
 
 class WorkspaceCreate(BaseModel):
     name: str = Field(min_length=1, max_length=200)
@@ -50,6 +53,7 @@ class WorkspaceOut(BaseModel):
 
 
 # ── Collections ───────────────────────────────────────────────────────
+
 
 class CollectionCreate(BaseModel):
     name: str = Field(min_length=1, max_length=200)
@@ -67,6 +71,7 @@ class CollectionOut(BaseModel):
 
 
 # ── Documents ─────────────────────────────────────────────────────────
+
 
 class DocumentOut(BaseModel):
     id: uuid.UUID
@@ -94,6 +99,7 @@ class IngestionJobOut(BaseModel):
 
 
 # ── Chat ──────────────────────────────────────────────────────────────
+
 
 class ChatSessionCreate(BaseModel):
     collection_id: uuid.UUID
@@ -129,6 +135,7 @@ class ChatMessageOut(BaseModel):
 
 # ── Retrieve ──────────────────────────────────────────────────────────
 
+
 class RetrieveRequest(BaseModel):
     query: str = Field(min_length=1, max_length=5000)
     collection_id: uuid.UUID
@@ -150,6 +157,7 @@ class RetrieveResponse(BaseModel):
 
 # ── Feedback ──────────────────────────────────────────────────────────
 
+
 class FeedbackCreate(BaseModel):
     message_id: uuid.UUID
     rating: int = Field(ge=1, le=5)
@@ -167,6 +175,7 @@ class FeedbackOut(BaseModel):
 
 
 # ── Training ──────────────────────────────────────────────────────────
+
 
 class TrainingRunCreate(BaseModel):
     run_type: str = Field(default="dpo")
@@ -191,6 +200,7 @@ class TrainingRunOut(BaseModel):
 
 
 # ── Health ────────────────────────────────────────────────────────────
+
 
 class HealthCheck(BaseModel):
     status: str

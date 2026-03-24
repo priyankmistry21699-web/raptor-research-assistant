@@ -8,7 +8,7 @@ GET  /eval/runs/{run_id}         — Get eval run details + results
 
 import logging
 import uuid
-from datetime import datetime, timezone
+from datetime import datetime
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from pydantic import BaseModel, Field
@@ -63,14 +63,18 @@ def create_eval_run(
     )
     db.add(run)
     log_audit_from_request(
-        db, request, action="eval.create",
-        resource="eval_run", resource_id=run.id,
+        db,
+        request,
+        action="eval.create",
+        resource="eval_run",
+        resource_id=run.id,
     )
     db.commit()
     db.refresh(run)
 
     # Dispatch Celery task for async eval execution
     from app.workers.tasks.evaluate import run_evaluation
+
     run_evaluation.delay(str(run.id))
 
     logger.info("Created eval run %s (type=%s)", run.id, run.eval_type)

@@ -13,6 +13,7 @@ Conversion logic:
 Storage: JSONL file with fields: prompt, chosen, rejected, metadata
 Also supports HuggingFace Dataset-compatible export.
 """
+
 import json
 import os
 import threading
@@ -23,9 +24,9 @@ from app.core.feedback import feedback_store
 
 # Default storage path
 DEFAULT_PREFERENCE_DIR = os.path.join(
-    os.path.dirname(__file__), '..', '..', 'data', 'preference'
+    os.path.dirname(__file__), "..", "..", "data", "preference"
 )
-DEFAULT_PREFERENCE_FILE = os.path.join(DEFAULT_PREFERENCE_DIR, 'preferences.jsonl')
+DEFAULT_PREFERENCE_FILE = os.path.join(DEFAULT_PREFERENCE_DIR, "preferences.jsonl")
 
 # Placeholder rejection for "helpful" feedback where we don't have a real rejected answer
 _DEFAULT_REJECTED = (
@@ -138,7 +139,7 @@ class PreferenceStore:
         if not os.path.exists(self._filepath):
             return []
         entries = []
-        with open(self._filepath, 'r', encoding='utf-8') as f:
+        with open(self._filepath, "r", encoding="utf-8") as f:
             for line in f:
                 line = line.strip()
                 if line:
@@ -147,14 +148,14 @@ class PreferenceStore:
 
     def _write_all(self, entries: List[Dict[str, Any]]):
         """Overwrite the preference file with given entries."""
-        with open(self._filepath, 'w', encoding='utf-8') as f:
+        with open(self._filepath, "w", encoding="utf-8") as f:
             for entry in entries:
-                f.write(json.dumps(entry, ensure_ascii=False) + '\n')
+                f.write(json.dumps(entry, ensure_ascii=False) + "\n")
 
     def _append(self, entry: Dict[str, Any]):
         """Append a single preference pair."""
-        with open(self._filepath, 'a', encoding='utf-8') as f:
-            f.write(json.dumps(entry, ensure_ascii=False) + '\n')
+        with open(self._filepath, "a", encoding="utf-8") as f:
+            f.write(json.dumps(entry, ensure_ascii=False) + "\n")
 
     def build_from_feedback(self) -> Dict[str, Any]:
         """
@@ -184,7 +185,9 @@ class PreferenceStore:
             "built_at": datetime.now(timezone.utc).isoformat(),
         }
 
-    def add_from_feedback_entry(self, feedback_entry: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+    def add_from_feedback_entry(
+        self, feedback_entry: Dict[str, Any]
+    ) -> Optional[Dict[str, Any]]:
         """
         Convert a single feedback entry and append it to the dataset.
         Returns the preference pair if created, None if skipped.
@@ -212,8 +215,7 @@ class PreferenceStore:
             "total_pairs": len(pairs),
             "by_feedback_type": type_counts,
             "has_real_rejected": sum(
-                1 for p in pairs
-                if p.get("rejected", "") != _DEFAULT_REJECTED
+                1 for p in pairs if p.get("rejected", "") != _DEFAULT_REJECTED
             ),
             "output_file": self._filepath,
         }
@@ -236,7 +238,7 @@ class PreferenceStore:
         if not os.path.exists(self._filepath):
             return 0
         with self._lock:
-            with open(self._filepath, 'r', encoding='utf-8') as f:
+            with open(self._filepath, "r", encoding="utf-8") as f:
                 return sum(1 for line in f if line.strip())
 
 

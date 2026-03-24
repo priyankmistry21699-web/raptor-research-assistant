@@ -28,7 +28,9 @@ def upload_file(
 ) -> str:
     mod = _backend()
     if settings.storage.provider == "gcs":
-        return mod.upload_file(key, data, content_type=content_type, bucket_name=bucket_name)
+        return mod.upload_file(
+            key, data, content_type=content_type, bucket_name=bucket_name
+        )
     return mod.upload_file(key, data, content_type=content_type)
 
 
@@ -47,10 +49,14 @@ def delete_file(key: str, bucket_name: str | None = None) -> None:
         mod.delete_file(key)
 
 
-def generate_presigned_url(key: str, expires_in: int = 3600, bucket_name: str | None = None) -> str:
+def generate_presigned_url(
+    key: str, expires_in: int = 3600, bucket_name: str | None = None
+) -> str:
     mod = _backend()
     if settings.storage.provider == "gcs" and bucket_name:
-        return mod.generate_presigned_url(key, expires_in=expires_in, bucket_name=bucket_name)
+        return mod.generate_presigned_url(
+            key, expires_in=expires_in, bucket_name=bucket_name
+        )
     return mod.generate_presigned_url(key, expires_in=expires_in)
 
 

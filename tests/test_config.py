@@ -3,17 +3,18 @@ Tests for config.yaml — validates configuration structure and values.
 
 Ensures all required sections and keys are present and correctly typed.
 """
+
 import os
 import pytest
 import yaml
 
-BASE_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
+BASE_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 
 
 @pytest.fixture(scope="module")
 def config():
-    config_path = os.path.join(BASE_DIR, 'config.yaml')
-    with open(config_path, 'r') as f:
+    config_path = os.path.join(BASE_DIR, "config.yaml")
+    with open(config_path, "r") as f:
         return yaml.safe_load(f)
 
 
@@ -21,9 +22,20 @@ class TestConfigStructure:
     """Tests for top-level config sections."""
 
     REQUIRED_SECTIONS = [
-        "arxiv", "embedding", "vector_db", "raptor", "llm",
-        "retrieval", "session", "feedback", "preference",
-        "finetune", "learning_loop", "evaluation", "server", "frontend",
+        "arxiv",
+        "embedding",
+        "vector_db",
+        "raptor",
+        "llm",
+        "retrieval",
+        "session",
+        "feedback",
+        "preference",
+        "finetune",
+        "learning_loop",
+        "evaluation",
+        "server",
+        "frontend",
     ]
 
     def test_config_loads(self, config):
@@ -49,7 +61,10 @@ class TestArxivConfig:
 class TestEmbeddingConfig:
     def test_model(self, config):
         assert "model" in config["embedding"]
-        assert "MiniLM" in config["embedding"]["model"] or "bge" in config["embedding"]["model"].lower()
+        assert (
+            "MiniLM" in config["embedding"]["model"]
+            or "bge" in config["embedding"]["model"].lower()
+        )
 
 
 class TestVectorDBConfig:

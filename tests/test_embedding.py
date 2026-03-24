@@ -1,6 +1,7 @@
 """
 Tests for app/core/embedding.py — EmbeddingModel.
 """
+
 import pytest
 from app.core.embedding import EmbeddingModel
 
@@ -34,8 +35,8 @@ class TestEmbeddingModel:
 
         def cosine_sim(a, b):
             dot = sum(x * y for x, y in zip(a, b))
-            norm_a = math.sqrt(sum(x ** 2 for x in a))
-            norm_b = math.sqrt(sum(x ** 2 for x in b))
+            norm_a = math.sqrt(sum(x**2 for x in a))
+            norm_b = math.sqrt(sum(x**2 for x in b))
             return dot / (norm_a * norm_b) if norm_a and norm_b else 0
 
         v1 = embedder.encode("neural network deep learning")

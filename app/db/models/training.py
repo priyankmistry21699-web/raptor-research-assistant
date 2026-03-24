@@ -3,7 +3,7 @@
 import uuid
 from datetime import datetime, timezone
 
-from sqlalchemy import String, Integer, Float, Text, DateTime, CheckConstraint, text
+from sqlalchemy import String, Integer, Text, DateTime, CheckConstraint, text
 from sqlalchemy.dialects.postgresql import UUID, JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -14,12 +14,19 @@ class TrainingRun(Base):
     __tablename__ = "training_runs"
 
     id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4,
+        UUID(as_uuid=True),
+        primary_key=True,
+        default=uuid.uuid4,
         server_default=text("gen_random_uuid()"),
     )
-    run_type: Mapped[str] = mapped_column(String(50), nullable=False)  # "dpo", "sft", "rlhf"
+    run_type: Mapped[str] = mapped_column(
+        String(50), nullable=False
+    )  # "dpo", "sft", "rlhf"
     status: Mapped[str] = mapped_column(
-        String(50), default="pending", server_default="pending", index=True,
+        String(50),
+        default="pending",
+        server_default="pending",
+        index=True,
     )
     base_model: Mapped[str] = mapped_column(String(200), nullable=False)
     pair_count: Mapped[int | None] = mapped_column(Integer)
@@ -30,7 +37,8 @@ class TrainingRun(Base):
     started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), default=lambda: datetime.now(timezone.utc),
+        DateTime(timezone=True),
+        default=lambda: datetime.now(timezone.utc),
         server_default=text("NOW()"),
     )
 

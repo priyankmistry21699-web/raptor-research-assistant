@@ -13,7 +13,6 @@ Produces a list of TreeNode dicts with parent_id links for persistence.
 
 import logging
 import uuid
-from typing import Any
 
 import numpy as np
 from sklearn.cluster import KMeans
@@ -84,7 +83,9 @@ def build_raptor_tree(
             break
 
         # Cluster current items
-        item_embeddings = np.array([it["embedding"] for it in current_items], dtype=np.float32)
+        item_embeddings = np.array(
+            [it["embedding"] for it in current_items], dtype=np.float32
+        )
         labels = _cluster_embeddings(item_embeddings, n_clusters)
 
         # Group items by cluster
@@ -132,7 +133,8 @@ def build_raptor_tree(
 
     logger.info(
         "RAPTOR tree built: %d leaf chunks → %d summary nodes",
-        len(chunks), len(summary_nodes),
+        len(chunks),
+        len(summary_nodes),
     )
     return summary_nodes
 
@@ -174,7 +176,9 @@ def _create_summary_node(
     Returns a node dict with an embedded summary, or None on failure.
     """
     # Combine texts for summarization
-    combined_text = "\n\n".join(it["text"][:1000] for it in items[:20])  # cap input size
+    combined_text = "\n\n".join(
+        it["text"][:1000] for it in items[:20]
+    )  # cap input size
     children_ids = [it["id"] for it in items]
 
     # Generate summary via LLM
@@ -217,6 +221,7 @@ def _generate_summary(text: str, node_type: str, level: int) -> str | None:
 
     try:
         from app.core.generation import generate
+
         result = generate(
             question=text[:8000],
             system_prompt=system_prompt,
@@ -235,6 +240,7 @@ def _embed_text(text: str) -> list[float] | None:
     """Embed a text string using the configured embedding model."""
     try:
         from app.core.retrieval_orchestrator import embed_query
+
         return embed_query(text)
     except Exception as e:
         logger.warning("Embedding failed: %s", e)

@@ -14,14 +14,17 @@ from app.db.session import get_db
 from app.db.models.chat import ChatSession, ChatMessage
 from app.core.security import get_current_user
 from app.api.v2.schemas import (
-    ChatSessionCreate, ChatSessionOut,
-    ChatMessageIn, ChatMessageOut,
+    ChatSessionCreate,
+    ChatSessionOut,
+    ChatMessageIn,
+    ChatMessageOut,
 )
 
 router = APIRouter(prefix="/chat", tags=["chat"])
 
 
 # ── Sessions ──────────────────────────────────────────────────────────
+
 
 @router.post("/sessions", response_model=ChatSessionOut, status_code=201)
 async def create_session(
@@ -82,6 +85,7 @@ async def delete_session(
 
 # ── Messages (RAG chat) ──────────────────────────────────────────────
 
+
 @router.post("/sessions/{session_id}/messages", response_model=ChatMessageOut)
 async def send_message(
     session_id: uuid.UUID,
@@ -114,9 +118,7 @@ async def send_message(
         .order_by(ChatMessage.created_at)
     )
     history_msgs = history_result.scalars().all()
-    chat_history = [
-        {"role": m.role, "content": m.content} for m in history_msgs
-    ]
+    chat_history = [{"role": m.role, "content": m.content} for m in history_msgs]
 
     # Generate answer using unified generation layer (LiteLLM + retrieval orchestrator)
     from app.core.generation import generate_with_retrieval

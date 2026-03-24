@@ -42,6 +42,7 @@ def embed_query(query: str) -> list[float]:
 
 # ── Tree traversal ────────────────────────────────────────────────────
 
+
 def _traverse_tree_nodes(
     session,
     chunk_doc_ids: list[str],
@@ -74,13 +75,15 @@ def _traverse_tree_nodes(
         while parent and parent.id not in seen_ids:
             seen_ids.add(parent.id)
             if parent.summary:
-                extra_context.append({
-                    "id": str(parent.id),
-                    "text": parent.summary,
-                    "node_type": parent.node_type,
-                    "level": parent.level,
-                    "label": parent.label,
-                })
+                extra_context.append(
+                    {
+                        "id": str(parent.id),
+                        "text": parent.summary,
+                        "node_type": parent.node_type,
+                        "level": parent.level,
+                        "label": parent.label,
+                    }
+                )
             parent = parent.parent
 
     # Also fetch any summary nodes (section/topic/root) for the collection
@@ -99,18 +102,21 @@ def _traverse_tree_nodes(
         )
         for sn in summary_nodes:
             if sn.id not in seen_ids:
-                extra_context.append({
-                    "id": str(sn.id),
-                    "text": sn.summary,
-                    "node_type": sn.node_type,
-                    "level": sn.level,
-                    "label": sn.label,
-                })
+                extra_context.append(
+                    {
+                        "id": str(sn.id),
+                        "text": sn.summary,
+                        "node_type": sn.node_type,
+                        "level": sn.level,
+                        "label": sn.label,
+                    }
+                )
 
     return extra_context
 
 
 # ── Citation builder ──────────────────────────────────────────────────
+
 
 def _build_citations(chunks: list[dict]) -> list[dict]:
     """
@@ -120,17 +126,20 @@ def _build_citations(chunks: list[dict]) -> list[dict]:
     citations = []
     for i, chunk in enumerate(chunks, start=1):
         payload = chunk.get("payload", {})
-        citations.append({
-            "index": i,
-            "document_id": payload.get("document_id"),
-            "chunk_index": payload.get("chunk_index"),
-            "score": chunk.get("rerank_score", chunk.get("score", 0)),
-            "snippet": (chunk.get("text", "") or payload.get("text", ""))[:200],
-        })
+        citations.append(
+            {
+                "index": i,
+                "document_id": payload.get("document_id"),
+                "chunk_index": payload.get("chunk_index"),
+                "score": chunk.get("rerank_score", chunk.get("score", 0)),
+                "snippet": (chunk.get("text", "") or payload.get("text", ""))[:200],
+            }
+        )
     return citations
 
 
 # ── Main orchestration ────────────────────────────────────────────────
+
 
 def retrieve(
     query: str,
@@ -177,7 +186,11 @@ def retrieve(
     tree_context: list[dict] = []
     if with_tree_context and session:
         doc_ids = list(
-            {r.get("payload", {}).get("document_id") for r in ranked if r.get("payload", {}).get("document_id")}
+            {
+                r.get("payload", {}).get("document_id")
+                for r in ranked
+                if r.get("payload", {}).get("document_id")
+            }
         )
         if doc_ids:
             tree_context = _traverse_tree_nodes(session, doc_ids, collection_id)

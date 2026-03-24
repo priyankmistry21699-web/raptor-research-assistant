@@ -1,8 +1,8 @@
 """
 Tests for app/core/preference.py — Preference dataset creation.
 """
+
 import os
-import pytest
 from app.core.preference import PreferenceStore, feedback_to_preference
 
 
@@ -76,17 +76,22 @@ class TestPreferenceStore:
     def test_build_from_feedback(self, feedback_store, preference_store):
         # Add some feedback first
         feedback_store.submit(
-            session_id="s1", question="What is attention?",
-            answer="It is a mechanism.", feedback_type="helpful",
+            session_id="s1",
+            question="What is attention?",
+            answer="It is a mechanism.",
+            feedback_type="helpful",
         )
         feedback_store.submit(
-            session_id="s1", question="Explain transformers.",
-            answer="Wrong.", feedback_type="correction",
+            session_id="s1",
+            question="Explain transformers.",
+            answer="Wrong.",
+            feedback_type="correction",
             correction="Transformers use self-attention.",
         )
 
         # Monkey-patch the preference store to read from our test feedback store
         import app.core.preference as pref_module
+
         original_store = pref_module.feedback_store
         pref_module.feedback_store = feedback_store
         try:
@@ -113,10 +118,11 @@ class TestPreferenceStore:
         assert "rejected" in exported[0]
 
     def test_persistence(self, tmp_dir):
-        from app.core.preference import PreferenceStore
-        filepath = os.path.join(str(tmp_dir), 'persist_pref.jsonl')
+        filepath = os.path.join(str(tmp_dir), "persist_pref.jsonl")
         store1 = PreferenceStore(filepath=filepath)
-        store1._write_all([{"prompt": "Q", "chosen": "A", "rejected": "B", "metadata": {}}])
+        store1._write_all(
+            [{"prompt": "Q", "chosen": "A", "rejected": "B", "metadata": {}}]
+        )
 
         store2 = PreferenceStore(filepath=filepath)
         assert store2.count() == 1

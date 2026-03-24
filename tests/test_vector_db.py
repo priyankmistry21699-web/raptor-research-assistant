@@ -1,6 +1,7 @@
 """
 Tests for app/core/vector_db.py — VectorDB (ChromaDB wrapper).
 """
+
 import pytest
 from app.core.vector_db import VectorDB
 
@@ -33,6 +34,7 @@ class TestVectorDB:
         @pytest.fixture(scope="class")
         def query_vec(self):
             from app.core.embedding import EmbeddingModel
+
             return EmbeddingModel().encode("transformer attention mechanism")
 
         def test_search(self, db, query_vec):

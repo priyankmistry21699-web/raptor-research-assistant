@@ -17,15 +17,15 @@ Endpoints:
   GET  /train/loop/model            — Get the currently selected best model
   PUT  /train/loop/config           — Update learning loop configuration
 """
+
 import os
 import sys
-import threading
 
 from fastapi import APIRouter, HTTPException, BackgroundTasks
 from pydantic import BaseModel
 from typing import List, Dict, Any, Optional
 
-sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '../..')))
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "../..")))
 
 from app.core.preference import preference_store
 from app.core.finetune import (
@@ -50,6 +50,7 @@ router = APIRouter(prefix="/train", tags=["training"])
 
 # --- Response models ---
 
+
 class BuildResult(BaseModel):
     total_feedback: int
     pairs_created: int
@@ -57,11 +58,13 @@ class BuildResult(BaseModel):
     output_file: str
     built_at: str
 
+
 class PreferenceStats(BaseModel):
     total_pairs: int
     by_feedback_type: Dict[str, int]
     has_real_rejected: int
     output_file: str
+
 
 class PreferencePair(BaseModel):
     prompt: str
@@ -70,6 +73,7 @@ class PreferencePair(BaseModel):
 
 
 # --- Endpoints ---
+
 
 @router.post("/preferences/build", response_model=BuildResult)
 def build_preferences():
@@ -110,7 +114,7 @@ def export_preferences():
     if not pairs:
         raise HTTPException(
             status_code=404,
-            detail="No preference pairs available. Submit feedback first, then POST /train/preferences/build."
+            detail="No preference pairs available. Submit feedback first, then POST /train/preferences/build.",
         )
     return [PreferencePair(**p) for p in pairs]
 
@@ -118,6 +122,7 @@ def export_preferences():
 # =============================================
 # Fine-tuning endpoints (Section 12)
 # =============================================
+
 
 class FinetuneRequest(BaseModel):
     base_model: str = DEFAULT_BASE_MODEL
@@ -133,10 +138,12 @@ class FinetuneRequest(BaseModel):
     beta: float = 0.1
     gradient_accumulation_steps: int = 4
 
+
 class FinetuneResponse(BaseModel):
     status: str
     run_name: Optional[str] = None
     message: str
+
 
 class TrainingStatus(BaseModel):
     running: bool
@@ -144,6 +151,7 @@ class TrainingStatus(BaseModel):
     progress: Optional[str] = None
     error: Optional[str] = None
     last_completed: Optional[Dict[str, Any]] = None
+
 
 class RegisterRequest(BaseModel):
     run_name: str
@@ -184,7 +192,7 @@ def start_finetune(req: FinetuneRequest, background_tasks: BackgroundTasks):
     if status["running"]:
         raise HTTPException(
             status_code=409,
-            detail=f"Training already in progress: {status['run_name']}"
+            detail=f"Training already in progress: {status['run_name']}",
         )
 
     # Get preference pairs
@@ -193,7 +201,7 @@ def start_finetune(req: FinetuneRequest, background_tasks: BackgroundTasks):
         raise HTTPException(
             status_code=400,
             detail=f"Need at least 2 preference pairs for DPO training. "
-                   f"Currently have {len(pairs)}. Submit more feedback first."
+            f"Currently have {len(pairs)}. Submit more feedback first.",
         )
 
     # Launch training in background
@@ -203,7 +211,7 @@ def start_finetune(req: FinetuneRequest, background_tasks: BackgroundTasks):
         status="started",
         run_name=req.run_name,
         message=f"DPO training started with {len(pairs)} preference pairs. "
-                f"Base model: {req.base_model}. Check /train/finetune/status for progress.",
+        f"Base model: {req.base_model}. Check /train/finetune/status for progress.",
     )
 
 
@@ -237,6 +245,7 @@ def register_model(req: RegisterRequest):
 # Paper-Specific Training endpoints (Step 18)
 # =============================================
 
+
 class PaperFinetuneRequest(BaseModel):
     arxiv_id: str
     base_model: str = DEFAULT_BASE_MODEL
@@ -252,6 +261,7 @@ class PaperFinetuneRequest(BaseModel):
     beta: float = 0.1
     gradient_accumulation_steps: int = 4
 
+
 class PaperFinetuneResponse(BaseModel):
     status: str
     run_name: Optional[str] = None
@@ -262,6 +272,7 @@ class PaperFinetuneResponse(BaseModel):
 def _run_paper_training_background(arxiv_id, request):
     """Background worker for paper-specific DPO training."""
     from app.core.finetune import fine_tune_on_paper
+
     fine_tune_on_paper(
         arxiv_id=arxiv_id,
         base_model=request.base_model,
@@ -294,16 +305,16 @@ def start_paper_finetune(req: PaperFinetuneRequest, background_tasks: Background
     if status["running"]:
         raise HTTPException(
             status_code=409,
-            detail=f"Training already in progress: {status['run_name']}"
+            detail=f"Training already in progress: {status['run_name']}",
         )
 
     # Validate paper exists
     from app.core.raptor_index import list_all_papers
+
     papers = list_all_papers()
     if req.arxiv_id not in papers:
         raise HTTPException(
-            status_code=404,
-            detail=f"Paper {req.arxiv_id} not found in system"
+            status_code=404, detail=f"Paper {req.arxiv_id} not found in system"
         )
 
     # Launch training in background
@@ -314,7 +325,7 @@ def start_paper_finetune(req: PaperFinetuneRequest, background_tasks: Background
         run_name=req.run_name,
         arxiv_id=req.arxiv_id,
         message=f"Paper-specific training started for {req.arxiv_id}. "
-                f"Base model: {req.base_model}. Check /train/finetune/status for progress.",
+        f"Base model: {req.base_model}. Check /train/finetune/status for progress.",
     )
 
 
@@ -326,15 +337,21 @@ def get_paper_models(arxiv_id: str):
     Returns list of model configs that were trained on this paper.
     """
     from app.core.finetune import get_paper_specific_models
+
     models = get_paper_specific_models(arxiv_id)
     if not models:
-        return {"arxiv_id": arxiv_id, "models": [], "message": "No paper-specific models found"}
+        return {
+            "arxiv_id": arxiv_id,
+            "models": [],
+            "message": "No paper-specific models found",
+        }
     return {"arxiv_id": arxiv_id, "models": models}
 
 
 # =============================================
 # Continuous Learning Loop endpoints (Section 13)
 # =============================================
+
 
 class LoopTriggerRequest(BaseModel):
     base_model: str = DEFAULT_BASE_MODEL
@@ -343,10 +360,12 @@ class LoopTriggerRequest(BaseModel):
     learning_rate: float = 5e-5
     force: bool = False
 
+
 class AutoLoopRequest(BaseModel):
     enable: bool
     min_new_feedback: int = 10
     check_interval_seconds: int = 300
+
 
 class LoopConfigRequest(BaseModel):
     min_new_feedback: Optional[int] = None
@@ -369,7 +388,7 @@ def trigger_loop(req: LoopTriggerRequest, background_tasks: BackgroundTasks):
     if training_status["running"]:
         raise HTTPException(
             status_code=409,
-            detail=f"Training already in progress: {training_status['run_name']}"
+            detail=f"Training already in progress: {training_status['run_name']}",
         )
 
     pairs = preference_store.export_for_training()
@@ -377,7 +396,7 @@ def trigger_loop(req: LoopTriggerRequest, background_tasks: BackgroundTasks):
         raise HTTPException(
             status_code=400,
             detail=f"Need at least 2 preference pairs. Currently have {len(pairs)}. "
-                   f"Submit more feedback or use force=true."
+            f"Submit more feedback or use force=true.",
         )
 
     def _run_loop():

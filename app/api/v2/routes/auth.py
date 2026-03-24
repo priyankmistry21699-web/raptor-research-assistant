@@ -49,6 +49,7 @@ async def clerk_webhook(request: Request, db: Session = Depends(get_db_sync)):
         raise HTTPException(status_code=401, detail="Invalid webhook signature")
 
     import json
+
     event = json.loads(body)
     event_type = event.get("type", "")
     data = event.get("data", {})
@@ -59,7 +60,9 @@ async def clerk_webhook(request: Request, db: Session = Depends(get_db_sync)):
 
     if event_type == "user.created":
         email = _extract_email(data)
-        display_name = f"{data.get('first_name', '')} {data.get('last_name', '')}".strip() or None
+        display_name = (
+            f"{data.get('first_name', '')} {data.get('last_name', '')}".strip() or None
+        )
         user = User(
             id=uuid.uuid4(),
             clerk_id=clerk_id,
@@ -77,7 +80,9 @@ async def clerk_webhook(request: Request, db: Session = Depends(get_db_sync)):
             email = _extract_email(data)
             if email:
                 user.email = email
-            display_name = f"{data.get('first_name', '')} {data.get('last_name', '')}".strip()
+            display_name = (
+                f"{data.get('first_name', '')} {data.get('last_name', '')}".strip()
+            )
             if display_name:
                 user.display_name = display_name
             db.commit()

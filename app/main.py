@@ -12,7 +12,7 @@ import os
 import sys
 
 # Add project root to path
-sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
 from fastapi import FastAPI
 
@@ -50,24 +50,30 @@ def create_app() -> FastAPI:
 
     # ── Middleware ─────────────────────────────────────────────────
     from app.core.middleware import register_middleware
+
     register_middleware(app)
 
     from app.core.security import AuthMiddleware
+
     app.add_middleware(AuthMiddleware)
 
     # ── Exception handlers ────────────────────────────────────────
     from app.core.exceptions import register_exception_handlers
+
     register_exception_handlers(app)
 
     # ── Observability: Prometheus ─────────────────────────────────
     try:
         from prometheus_fastapi_instrumentator import Instrumentator
+
         instrumentator = Instrumentator(
             should_group_status_codes=True,
             should_ignore_untemplated=True,
             excluded_handlers=["/metrics", "/health", "/api/v2/health/live"],
         )
-        instrumentator.instrument(app).expose(app, endpoint="/metrics", include_in_schema=False)
+        instrumentator.instrument(app).expose(
+            app, endpoint="/metrics", include_in_schema=False
+        )
     except ImportError:
         pass  # prometheus-fastapi-instrumentator not installed
 
@@ -78,11 +84,21 @@ def create_app() -> FastAPI:
     from app.api.feedback import router as feedback_router
     from app.api.eval import router as eval_router
 
-    app.include_router(retrieve_router, prefix="/api/v1", tags=["v1-deprecated"], deprecated=True)
-    app.include_router(train_router, prefix="/api/v1", tags=["v1-deprecated"], deprecated=True)
-    app.include_router(chat_router, prefix="/api/v1", tags=["v1-deprecated"], deprecated=True)
-    app.include_router(feedback_router, prefix="/api/v1", tags=["v1-deprecated"], deprecated=True)
-    app.include_router(eval_router, prefix="/api/v1", tags=["v1-deprecated"], deprecated=True)
+    app.include_router(
+        retrieve_router, prefix="/api/v1", tags=["v1-deprecated"], deprecated=True
+    )
+    app.include_router(
+        train_router, prefix="/api/v1", tags=["v1-deprecated"], deprecated=True
+    )
+    app.include_router(
+        chat_router, prefix="/api/v1", tags=["v1-deprecated"], deprecated=True
+    )
+    app.include_router(
+        feedback_router, prefix="/api/v1", tags=["v1-deprecated"], deprecated=True
+    )
+    app.include_router(
+        eval_router, prefix="/api/v1", tags=["v1-deprecated"], deprecated=True
+    )
 
     # Also keep v1 routes at root for existing clients
     app.include_router(retrieve_router, deprecated=True)
@@ -157,15 +173,19 @@ def _init_telemetry(app, settings):
         from opentelemetry import trace
         from opentelemetry.sdk.trace import TracerProvider
         from opentelemetry.sdk.trace.export import BatchSpanProcessor
-        from opentelemetry.exporter.otlp.proto.grpc.trace_exporter import OTLPSpanExporter
+        from opentelemetry.exporter.otlp.proto.grpc.trace_exporter import (
+            OTLPSpanExporter,
+        )
         from opentelemetry.sdk.resources import Resource
         from opentelemetry.instrumentation.fastapi import FastAPIInstrumentor
 
-        resource = Resource.create({
-            "service.name": "raptor-rag-platform",
-            "service.version": "2.0.0-alpha",
-            "deployment.environment": settings.environment,
-        })
+        resource = Resource.create(
+            {
+                "service.name": "raptor-rag-platform",
+                "service.version": "2.0.0-alpha",
+                "deployment.environment": settings.environment,
+            }
+        )
         provider = TracerProvider(resource=resource)
         exporter = OTLPSpanExporter(endpoint=otlp_endpoint, insecure=True)
         provider.add_span_processor(BatchSpanProcessor(exporter))
@@ -180,4 +200,13 @@ app = create_app()
 
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run("app.main:create_app", factory=True, host="0.0.0.0", port=8000, reload=True)
+
+    from app.core.config import settings
+
+    uvicorn.run(
+        "app.main:create_app",
+        factory=True,
+        host=settings.api_host,
+        port=settings.api_port,
+        reload=True,
+    )

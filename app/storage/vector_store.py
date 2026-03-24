@@ -18,7 +18,6 @@ from qdrant_client.http.models import (
     Filter,
     FieldCondition,
     MatchValue,
-    SearchRequest,
 )
 
 from app.core.config import settings
@@ -38,6 +37,7 @@ def _collection_name(collection_id: uuid.UUID) -> str:
 
 
 # ── Collection lifecycle ─────────────────────────────────────────────
+
 
 def ensure_collection(collection_id: uuid.UUID, dim: int | None = None) -> None:
     """Create the Qdrant collection if it doesn't exist."""
@@ -61,6 +61,7 @@ def delete_collection(collection_id: uuid.UUID) -> None:
 
 
 # ── Write ─────────────────────────────────────────────────────────────
+
 
 def upsert_vectors(
     collection_id: uuid.UUID,
@@ -93,6 +94,7 @@ def delete_vectors(collection_id: uuid.UUID, ids: list[str]) -> None:
 
 # ── Search ────────────────────────────────────────────────────────────
 
+
 def search(
     collection_id: uuid.UUID,
     query_vector: list[float],
@@ -109,21 +111,28 @@ def search(
     qdrant_filter = None
     if filters:
         conditions = [
-            FieldCondition(key=k, match=MatchValue(value=v))
-            for k, v in filters.items()
+            FieldCondition(key=k, match=MatchValue(value=v)) for k, v in filters.items()
         ]
         qdrant_filter = Filter(must=conditions)
 
-    results = client.search(
-        collection_name=name,
-        query_vector=query_vector,
-        limit=top_k,
-        query_filter=qdrant_filter,
-    )
-    return [
-        {"id": str(r.id), "score": r.score, "payload": r.payload}
-        for r in results
-    ]
+    if hasattr(client, "search"):
+        results = client.search(
+            collection_name=name,
+            query_vector=query_vector,
+            limit=top_k,
+            query_filter=qdrant_filter,
+        )
+    else:
+        response = client.query_points(
+            collection_name=name,
+            query=query_vector,
+            limit=top_k,
+            query_filter=qdrant_filter,
+            with_payload=True,
+        )
+        results = response.points
+
+    return [{"id": str(r.id), "score": r.score, "payload": r.payload} for r in results]
 
 
 def collection_info(collection_id: uuid.UUID) -> dict | None:
@@ -133,8 +142,11 @@ def collection_info(collection_id: uuid.UUID) -> dict | None:
     if not client.collection_exists(name):
         return None
     info = client.get_collection(name)
+    vectors_count = getattr(info, "vectors_count", None)
+    if vectors_count is None:
+        vectors_count = getattr(info, "indexed_vectors_count", None)
     return {
         "name": name,
         "points_count": info.points_count,
-        "vectors_count": info.vectors_count,
+        "vectors_count": vectors_count,
     }

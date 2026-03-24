@@ -4,6 +4,7 @@ Tests for app/core/ingestion.py — arXiv paper fetching and PDF download.
 Note: Network tests (actual arXiv calls) are marked with @pytest.mark.network
 and skipped by default. Run with: pytest -m network
 """
+
 import os
 import pytest
 from app.core.ingestion import (
@@ -11,7 +12,6 @@ from app.core.ingestion import (
     RAW_DATA_DIR,
     PROCESSED_DATA_DIR,
     fetch_arxiv_papers,
-    download_pdf,
     save_metadata,
 )
 
@@ -39,7 +39,8 @@ class TestSaveMetadata:
         save_metadata(papers, filepath)
 
         import json
-        with open(filepath, 'r') as f:
+
+        with open(filepath, "r") as f:
             loaded = json.load(f)
         assert len(loaded) == 1
         assert loaded[0]["title"] == "Test Paper"
@@ -49,7 +50,8 @@ class TestSaveMetadata:
         save_metadata([], filepath)
 
         import json
-        with open(filepath, 'r') as f:
+
+        with open(filepath, "r") as f:
             loaded = json.load(f)
         assert loaded == []
 
@@ -60,8 +62,10 @@ class TestFetchArxiv:
 
     def test_fetch_small_batch(self):
         papers = fetch_arxiv_papers(
-            categories=["cs.AI"], max_results=2,
-            date_from="2024-01-01", date_to="2024-12-31",
+            categories=["cs.AI"],
+            max_results=2,
+            date_from="2024-01-01",
+            date_to="2024-12-31",
         )
         assert isinstance(papers, list)
         # May be empty if no papers match, but should not error

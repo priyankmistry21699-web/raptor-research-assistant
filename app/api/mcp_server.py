@@ -32,31 +32,28 @@ System endpoints:
 Launch:
   uvicorn app.api.mcp_server:app --host 0.0.0.0 --port 8000 --reload
 """
+
 import os
-import sys
 import time
 import logging
 import glob
 from contextlib import asynccontextmanager
+from typing import Any, Dict, List, Optional
 
 import yaml
+from dotenv import load_dotenv
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
-from typing import List, Dict, Any, Optional
-from dotenv import load_dotenv
-
-sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '../..')))
-load_dotenv(os.path.join(os.path.dirname(__file__), '../../.env'))
-
-logger = logging.getLogger(__name__)
 
 from app.core.retrieval import RaptorRetriever
 from app.core.prompt_builder import build_prompt, build_messages
 from app.core.llm_client import (
-    run_llm, run_llm_messages, list_available_models,
-    check_model_health, get_active_model,
+    run_llm_messages,
+    list_available_models,
+    check_model_health,
+    get_active_model,
 )
 from app.core.session import session_manager
 from app.core.feedback import feedback_store
@@ -68,20 +65,25 @@ from app.api.feedback import router as feedback_router
 from app.api.train import router as train_router
 from app.api.eval import router as eval_router
 
+load_dotenv(os.path.join(os.path.dirname(__file__), "../../.env"))
+
+logger = logging.getLogger(__name__)
+
 # --- Config loading ---
-BASE_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), '../..'))
-CONFIG_PATH = os.path.join(BASE_DIR, 'config.yaml')
+BASE_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), "../.."))
+CONFIG_PATH = os.path.join(BASE_DIR, "config.yaml")
 
 
 def _load_config() -> Dict[str, Any]:
     if os.path.exists(CONFIG_PATH):
-        with open(CONFIG_PATH, 'r', encoding='utf-8') as f:
+        with open(CONFIG_PATH, "r", encoding="utf-8") as f:
             return yaml.safe_load(f) or {}
     return {}
 
 
 # --- Lifespan: startup / shutdown ---
 _startup_time: float = 0.0
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -91,7 +93,7 @@ async def lifespan(app: FastAPI):
     server_cfg = cfg.get("server", {})
     logger.info(
         "RAPTOR Backend starting — host=%s port=%s",
-        server_cfg.get("host", "0.0.0.0"),
+        server_cfg.get("host", "127.0.0.1"),
         server_cfg.get("port", 8000),
     )
     logger.info("Active model: %s", get_active_model())
@@ -103,7 +105,7 @@ async def lifespan(app: FastAPI):
 app = FastAPI(
     title="RAPTOR Research Assistant",
     description="Backend API for the RAPTOR Research Assistant — "
-                "hybrid retrieval, LLM inference, feedback, fine-tuning, and evaluation.",
+    "hybrid retrieval, LLM inference, feedback, fine-tuning, and evaluation.",
     version="1.0.0",
     lifespan=lifespan,
 )
@@ -130,7 +132,10 @@ async def log_requests(request: Request, call_next):
     elapsed = (time.time() - start) * 1000
     logger.info(
         "%s %s → %s (%.0fms)",
-        request.method, request.url.path, response.status_code, elapsed,
+        request.method,
+        request.url.path,
+        response.status_code,
+        elapsed,
     )
     return response
 
@@ -138,7 +143,13 @@ async def log_requests(request: Request, call_next):
 # --- Global exception handler ---
 @app.exception_handler(Exception)
 async def global_exception_handler(request: Request, exc: Exception):
-    logger.error("Unhandled error on %s %s: %s", request.method, request.url.path, exc, exc_info=True)
+    logger.error(
+        "Unhandled error on %s %s: %s",
+        request.method,
+        request.url.path,
+        exc,
+        exc_info=True,
+    )
     return JSONResponse(status_code=500, content={"detail": "Internal server error"})
 
 
@@ -167,23 +178,26 @@ def _retrieve_chunks(query: str, top_k: int = 5) -> List[Dict[str, Any]]:
     chunks = []
     for r in results:
         ctx = r.get("tree_context", {})
-        chunks.append({
-            "arxiv_id": r.get("arxiv_id", ""),
-            "chunk_index": r.get("chunk_index", 0),
-            "chunk_text": r.get("text", ""),
-            "section_num": ctx.get("section_num", ""),
-            "section_title": ctx.get("section_title", ""),
-            "section_summary": ctx.get("section_summary", ""),
-            "topic": ctx.get("topic", ""),
-            "topic_summary": ctx.get("topic_summary", ""),
-            "paper_title": ctx.get("paper_title", ""),
-        })
+        chunks.append(
+            {
+                "arxiv_id": r.get("arxiv_id", ""),
+                "chunk_index": r.get("chunk_index", 0),
+                "chunk_text": r.get("text", ""),
+                "section_num": ctx.get("section_num", ""),
+                "section_title": ctx.get("section_title", ""),
+                "section_summary": ctx.get("section_summary", ""),
+                "topic": ctx.get("topic", ""),
+                "topic_summary": ctx.get("topic_summary", ""),
+                "paper_title": ctx.get("paper_title", ""),
+            }
+        )
     return chunks
 
 
 # ============================================================
 #  System endpoints
 # ============================================================
+
 
 @app.get("/", tags=["system"])
 def root():
@@ -234,16 +248,18 @@ def health_check():
         components["chromadb"] = {"status": "error", "error": str(e)}
 
     # RAPTOR trees
-    tree_dir = os.path.join(BASE_DIR, 'data', 'raw', 'paper_trees')
+    tree_dir = os.path.join(BASE_DIR, "data", "raw", "paper_trees")
     try:
-        tree_files = glob.glob(os.path.join(tree_dir, '*_tree.gpickle'))
+        tree_files = glob.glob(os.path.join(tree_dir, "*_tree.gpickle"))
         components["raptor_trees"] = {"status": "ok", "papers": len(tree_files)}
     except Exception as e:
         components["raptor_trees"] = {"status": "error", "error": str(e)}
 
-    overall = "healthy" if all(
-        c.get("status") == "ok" for c in components.values()
-    ) else "degraded"
+    overall = (
+        "healthy"
+        if all(c.get("status") == "ok" for c in components.values())
+        else "degraded"
+    )
 
     return {"status": overall, "components": components}
 
@@ -254,8 +270,8 @@ def system_status():
     Full system status — papers, chunks, sessions, feedback, models, uptime.
     """
     # Papers
-    tree_dir = os.path.join(BASE_DIR, 'data', 'raw', 'paper_trees')
-    tree_files = glob.glob(os.path.join(tree_dir, '*_tree.gpickle'))
+    tree_dir = os.path.join(BASE_DIR, "data", "raw", "paper_trees")
+    tree_files = glob.glob(os.path.join(tree_dir, "*_tree.gpickle"))
     paper_count = len(tree_files)
 
     # Chunks in ChromaDB
@@ -309,14 +325,17 @@ def get_config():
 #  Pipeline endpoints (MCP-style: retrieve → prompt → LLM)
 # ============================================================
 
+
 class PromptRequest(BaseModel):
     query: str
     top_k: int = 5
     task: str = "qa"
     chat_history: Optional[List[Dict[str, str]]] = None
 
+
 class PromptResult(BaseModel):
     prompt: str
+
 
 class LLMRequest(BaseModel):
     query: str
@@ -324,6 +343,7 @@ class LLMRequest(BaseModel):
     task: str = "qa"
     model: str = "auto"
     chat_history: Optional[List[Dict[str, str]]] = None
+
 
 class LLMResult(BaseModel):
     answer: str
@@ -335,7 +355,9 @@ class LLMResult(BaseModel):
 def prompt(req: PromptRequest):
     """Retrieve context and build a prompt for LLM."""
     chunks = _retrieve_chunks(req.query, req.top_k)
-    prompt_str = build_prompt(chunks, req.query, task=req.task, chat_history=req.chat_history)
+    prompt_str = build_prompt(
+        chunks, req.query, task=req.task, chat_history=req.chat_history
+    )
     return PromptResult(prompt=prompt_str)
 
 
@@ -357,10 +379,14 @@ def llm(req: LLMRequest):
       - model="finetuned-xxx" → fine-tuned LoRA adapter
     """
     chunks = _retrieve_chunks(req.query, req.top_k)
-    messages = build_messages(chunks, req.query, task=req.task, chat_history=req.chat_history)
+    messages = build_messages(
+        chunks, req.query, task=req.task, chat_history=req.chat_history
+    )
     model_name = req.model if req.model != "auto" else get_active_model()
     answer = run_llm_messages(messages, model=model_name, task=req.task)
-    return LLMResult(answer=answer, prompt=messages[-1]["content"], model_used=model_name)
+    return LLMResult(
+        answer=answer, prompt=messages[-1]["content"], model_used=model_name
+    )
 
 
 @app.get("/llm/models", tags=["pipeline"])

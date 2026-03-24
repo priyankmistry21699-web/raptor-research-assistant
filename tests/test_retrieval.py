@@ -1,6 +1,7 @@
 """
 Tests for app/core/retrieval.py — RaptorRetriever.
 """
+
 import pytest
 from app.core.retrieval import RaptorRetriever
 
@@ -41,28 +42,37 @@ class TestRaptorRetriever:
     def test_retrieve_hybrid(self, retriever):
         """Test hybrid retrieval (vector + tree). Requires ChromaDB data."""
         from app.core.vector_db import VectorDB
+
         db = VectorDB()
         if db.count() > 0:
-            results = retriever.retrieve("What is the transformer architecture?", top_k=3)
+            results = retriever.retrieve(
+                "What is the transformer architecture?", top_k=3
+            )
             assert isinstance(results, list)
             assert len(results) > 0
 
     def test_retrieve_with_tree_context(self, retriever):
         from app.core.vector_db import VectorDB
+
         db = VectorDB()
         if db.count() > 0:
             results = retriever.retrieve(
-                "attention mechanism", top_k=2, include_tree_context=True,
+                "attention mechanism",
+                top_k=2,
+                include_tree_context=True,
             )
             if results:
                 assert "tree_context" in results[0]
 
     def test_retrieve_without_tree_context(self, retriever):
         from app.core.vector_db import VectorDB
+
         db = VectorDB()
         if db.count() > 0:
             results = retriever.retrieve(
-                "neural network", top_k=2, include_tree_context=False,
+                "neural network",
+                top_k=2,
+                include_tree_context=False,
             )
             if results:
                 assert "tree_context" not in results[0]

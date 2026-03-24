@@ -4,7 +4,7 @@ Tests for app/core/llm_client.py — LLM inference routing.
 Note: Actual LLM calls are not tested here (requires running Ollama/Groq).
 Tests focus on model registry, routing logic, and configuration.
 """
-import pytest
+
 from app.core.llm_client import (
     list_available_models,
     get_active_model,

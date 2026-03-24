@@ -2,15 +2,16 @@
 Vector DB interface for RAPTOR Research Assistant.
 Wraps ChromaDB for semantic search over paper chunks.
 """
+
 import os
 from typing import List, Dict, Any, Optional
 import chromadb
 
 # Default Chroma path — can be overridden
 DEFAULT_CHROMA_DIR = os.path.join(
-    os.path.dirname(__file__), '..', '..', 'data', 'raw', 'chroma_db'
+    os.path.dirname(__file__), "..", "..", "data", "raw", "chroma_db"
 )
-COLLECTION_NAME = 'paper_chunks'
+COLLECTION_NAME = "paper_chunks"
 
 
 class VectorDB:
@@ -30,25 +31,27 @@ class VectorDB:
     ) -> List[Dict[str, Any]]:
         """Semantic search by embedding vector. Returns ranked results."""
         kwargs = {
-            'query_embeddings': [query_embedding],
-            'n_results': top_k,
-            'include': ['documents', 'metadatas', 'distances'],
+            "query_embeddings": [query_embedding],
+            "n_results": top_k,
+            "include": ["documents", "metadatas", "distances"],
         }
         if where:
-            kwargs['where'] = where
+            kwargs["where"] = where
 
         results = self.collection.query(**kwargs)
 
         items = []
-        for i in range(len(results['ids'][0])):
-            items.append({
-                'id': results['ids'][0][i],
-                'text': results['documents'][0][i],
-                'metadata': results['metadatas'][0][i],
-                'distance': results['distances'][0][i],
-                'arxiv_id': results['metadatas'][0][i].get('arxiv_id', ''),
-                'chunk_index': results['metadatas'][0][i].get('chunk_index', 0),
-            })
+        for i in range(len(results["ids"][0])):
+            items.append(
+                {
+                    "id": results["ids"][0][i],
+                    "text": results["documents"][0][i],
+                    "metadata": results["metadatas"][0][i],
+                    "distance": results["distances"][0][i],
+                    "arxiv_id": results["metadatas"][0][i].get("arxiv_id", ""),
+                    "chunk_index": results["metadatas"][0][i].get("chunk_index", 0),
+                }
+            )
         return items
 
     def search_by_paper(
@@ -61,18 +64,18 @@ class VectorDB:
         return self.search(
             query_embedding=query_embedding,
             top_k=top_k,
-            where={'arxiv_id': arxiv_id},
+            where={"arxiv_id": arxiv_id},
         )
 
     def get_by_id(self, doc_id: str) -> Optional[Dict[str, Any]]:
         """Retrieve a single document by ID."""
-        result = self.collection.get(ids=[doc_id], include=['documents', 'metadatas'])
-        if not result['ids']:
+        result = self.collection.get(ids=[doc_id], include=["documents", "metadatas"])
+        if not result["ids"]:
             return None
         return {
-            'id': result['ids'][0],
-            'text': result['documents'][0],
-            'metadata': result['metadatas'][0],
+            "id": result["ids"][0],
+            "text": result["documents"][0],
+            "metadata": result["metadatas"][0],
         }
 
     def upsert_chunks(

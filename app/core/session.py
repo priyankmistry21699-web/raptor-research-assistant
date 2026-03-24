@@ -9,6 +9,7 @@ Each session tracks:
 
 Thread-safe via threading.Lock for concurrent FastAPI/Gradio access.
 """
+
 import uuid
 import threading
 from datetime import datetime, timezone
@@ -51,7 +52,7 @@ class Session:
         Return chat history in the format expected by prompt_builder.
         Only includes role + content, trimmed to the last N turns.
         """
-        recent = self.history[-(max_turns * 2):]  # user+assistant pairs
+        recent = self.history[-(max_turns * 2) :]  # user+assistant pairs
         return [{"role": h["role"], "content": h["content"]} for h in recent]
 
     def to_dict(self) -> Dict[str, Any]:

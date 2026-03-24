@@ -93,19 +93,16 @@ def _run_ragas_eval(session, run: EvalRun, config: dict) -> dict:
 
     for msg in messages:
         # Get the user question (previous message in session)
-        user_msg = (
-            session.execute(
-                select(ChatMessage)
-                .where(
-                    ChatMessage.session_id == msg.session_id,
-                    ChatMessage.role == "user",
-                    ChatMessage.created_at < msg.created_at,
-                )
-                .order_by(ChatMessage.created_at.desc())
-                .limit(1)
+        user_msg = session.execute(
+            select(ChatMessage)
+            .where(
+                ChatMessage.session_id == msg.session_id,
+                ChatMessage.role == "user",
+                ChatMessage.created_at < msg.created_at,
             )
-            .scalar_one_or_none()
-        )
+            .order_by(ChatMessage.created_at.desc())
+            .limit(1)
+        ).scalar_one_or_none()
         if user_msg:
             questions.append(user_msg.content)
             answers.append(msg.content)
@@ -125,11 +122,13 @@ def _run_ragas_eval(session, run: EvalRun, config: dict) -> dict:
         from ragas.metrics import faithfulness, answer_relevancy
         from datasets import Dataset
 
-        dataset = Dataset.from_dict({
-            "question": questions,
-            "answer": answers,
-            "contexts": contexts,
-        })
+        dataset = Dataset.from_dict(
+            {
+                "question": questions,
+                "answer": answers,
+                "contexts": contexts,
+            }
+        )
         result = evaluate(dataset, metrics=[faithfulness, answer_relevancy])
         scores = {k: float(v) for k, v in result.items() if isinstance(v, (int, float))}
         return {
