@@ -19,10 +19,36 @@ env:
   WORKER_SERVICE: raptor-worker
 
 jobs:
+  deploy-preflight:
+    name: Deploy Preflight
+    runs-on: ubuntu-latest
+    outputs:
+      should_deploy: ${{ steps.check.outputs.should_deploy }}
+      skip_reason: ${{ steps.check.outputs.skip_reason }}
+    steps:
+      - id: check
+        env:
+          ACTOR: ${{ github.actor }}
+          GCP_PROJECT_SECRET: ${{ secrets.GCP_PROJECT }}
+          GCP_WIF_SECRET: ${{ secrets.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          GCP_SERVICE_ACCOUNT_SECRET: ${{ secrets.GCP_SERVICE_ACCOUNT }}
+        run: |
+          if [ "$ACTOR" = "dependabot[bot]" ]; then
+            echo "should_deploy=false" >> "$GITHUB_OUTPUT"
+            echo "skip_reason=dependabot" >> "$GITHUB_OUTPUT"
+          elif [ -z "$GCP_PROJECT_SECRET" ] || [ -z "$GCP_WIF_SECRET" ] || [ -z "$GCP_SERVICE_ACCOUNT_SECRET" ]; then
+            echo "should_deploy=false" >> "$GITHUB_OUTPUT"
+            echo "skip_reason=missing-secrets" >> "$GITHUB_OUTPUT"
+          else
+            echo "should_deploy=true" >> "$GITHUB_OUTPUT"
+            echo "skip_reason=ready" >> "$GITHUB_OUTPUT"
+          fi
+
   dependabot-deploy-skipped:
     name: Dependabot Deploy Notice
     runs-on: ubuntu-latest
-    if: github.actor == 'dependabot[bot]'
+    needs: deploy-preflight
+    if: needs.deploy-preflight.outputs.skip_reason == 'dependabot'
     steps:
       - name: Explain skipped deployment
         run: |
@@ -30,10 +56,23 @@ jobs:
           echo "GitHub does not expose repository secrets to Dependabot workflows by default."
           echo "That means GCP auth inputs are unavailable, so deployment cannot run safely."
 
+  missing-gcp-secrets:
+    name: Missing GCP Secrets Notice
+    runs-on: ubuntu-latest
+    needs: deploy-preflight
+    if: needs.deploy-preflight.outputs.skip_reason == 'missing-secrets'
+    steps:
+      - name: Explain skipped deployment
+        run: |
+          echo "Deploy is skipped because required GCP secrets are not available in this workflow context."
+          echo "Expected secrets: GCP_PROJECT, GCP_WORKLOAD_IDENTITY_PROVIDER, GCP_SERVICE_ACCOUNT."
+          echo "Check repository secrets, environment secrets, and whether this run has access to them."
+
   build-and-push:
     name: Build & Push to Artifact Registry
     runs-on: ubuntu-latest
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main' && github.actor != 'dependabot[bot]'
+    needs: deploy-preflight
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main' && needs.deploy-preflight.outputs.should_deploy == 'true'
     permissions:
       contents: read
       id-token: write
@@ -64,8 +103,8 @@ jobs:
   deploy-staging:
     name: Deploy to Staging
     runs-on: ubuntu-latest
-    needs: build-and-push
-    if: github.actor != 'dependabot[bot]'
+    needs: [deploy-preflight, build-and-push]
+    if: needs.deploy-preflight.outputs.should_deploy == 'true'
     environment: staging
     permissions:
       contents: read
@@ -87,8 +126,8 @@ jobs:
   deploy-production:
     name: Deploy to Production
     runs-on: ubuntu-latest
-    needs: deploy-staging
-    if: github.actor != 'dependabot[bot]'
+    needs: [deploy-preflight, deploy-staging]
+    if: needs.deploy-preflight.outputs.should_deploy == 'true'
     environment: production
     permissions:
       contents: read
