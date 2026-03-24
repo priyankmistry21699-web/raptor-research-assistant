@@ -19,6 +19,17 @@ env:
   WORKER_SERVICE: raptor-worker
 
 jobs:
+  dependabot-deploy-skipped:
+    name: Dependabot Deploy Notice
+    runs-on: ubuntu-latest
+    if: github.actor == 'dependabot[bot]'
+    steps:
+      - name: Explain skipped deployment
+        run: |
+          echo "Deploy is intentionally skipped for Dependabot-triggered runs."
+          echo "GitHub does not expose repository secrets to Dependabot workflows by default."
+          echo "That means GCP auth inputs are unavailable, so deployment cannot run safely."
+
   build-and-push:
     name: Build & Push to Artifact Registry
     runs-on: ubuntu-latest
