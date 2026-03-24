@@ -1,607 +1,312 @@
-# RAPTOR RAG Platform — Architecture (GCP Production)
+# RAPTOR RAG Platform Architecture
 
-> Industry-standard, multi-tenant RAPTOR RAG platform designed for GCP deployment.  
-> This document covers the full system design: diagrams, data flows, DB schema, API surface, and storage layout.
+This document describes the architecture that exists in the repository today, plus the intended production deployment shape that the roadmap is targeting.
 
----
+## 1. Scope
 
-## 1. High-Level Architecture (Mermaid)
+There are two distinct views that matter:
+
+1. Current implementation in this repository
+2. Target production deployment for a hardened multi-tenant platform
+
+The current implementation is the source of truth for local development and testing. The production view explains the intended end state for Cloud Run / managed infrastructure style deployment.
+
+## 2. Current Implementation
+
+### 2.1 Runtime Topology
 
 ```mermaid
 flowchart TB
-    subgraph CLIENT["USER / CLIENT LAYER"]
-        FE["Next.js Frontend<br/>Auth · Upload · Chat · Citations · Feedback · Admin"]
+    subgraph Client
+        User[User or API Client]
+        Docs[Swagger UI /docs]
     end
 
-    subgraph EDGE["EDGE / SECURITY LAYER"]
-        LB["Cloud Load Balancer + HTTPS"]
-        AUTH["Auth Provider<br/>Clerk / Auth0 / Firebase Auth"]
-        RL["Rate Limiting · CORS · Audit Hooks"]
+    subgraph API[FastAPI Application]
+        App[app.main]
+        MW[Middleware\nAuth\nRate Limit\nSecurity Headers\nAudit Hooks]
+        Routes[V2 Routes\nhealth auth workspaces collections documents\nchat retrieve generate feedback eval training admin]
+        Core[Generation\nRetrieval Orchestrator\nRAPTOR Tree Builder\nConfig]
     end
 
-    subgraph APP["APPLICATION LAYER — FastAPI on Cloud Run"]
-        API["FastAPI API"]
-        MODS["Auth Middleware · RBAC · Input Validation<br/>Session Service · Retrieval Orchestrator<br/>Prompt Builder · Citation Builder<br/>Model Router · Job Dispatcher · Audit Logger"]
+    subgraph Workers[Background Processing]
+        Celery[Celery Worker]
+        Ingest[Ingestion Tasks]
+        Eval[Evaluation Tasks]
     end
 
-    subgraph PROCESSING["WORKER / PIPELINE LAYER"]
-        CELERY["Celery Workers"]
-        JOBS["validate → extract → normalize → chunk<br/>→ embed → RAPTOR tree → index<br/>eval · feedback · training"]
+    subgraph Storage[Stateful Services]
+        PG[PostgreSQL]
+        Redis[Redis]
+        Qdrant[Qdrant]
+        MinIO[MinIO]
     end
 
-    subgraph STORAGE["STORAGE LAYER"]
-        PG["PostgreSQL<br/>Cloud SQL"]
-        REDIS["Redis<br/>Memorystore"]
-        GCS["Google Cloud Storage"]
-        QDRANT["Qdrant / pgvector"]
+    subgraph LLMs[Model Providers]
+        Ollama[Ollama on host:11435]
+        Anthropic[Anthropic API]
+        Groq[Groq API]
+        OpenAI[OpenAI API]
     end
 
-    subgraph AI["AI / KNOWLEDGE LAYER"]
-        EMB["Embedding Models<br/>SentenceTransformers / BGE"]
-        RERANK["Reranker<br/>BGE / cross-encoder"]
-        RAPTOR["RAPTOR Engine<br/>tree traversal · context assembly"]
-        LLM["LLM Routing — LiteLLM<br/>OpenAI · Anthropic · Groq · vLLM"]
-    end
-
-    subgraph OPS["OBSERVABILITY"]
-        LOG["Cloud Logging"]
-        MON["Cloud Monitoring"]
-        SENTRY["Sentry"]
-        OTEL["OpenTelemetry"]
-    end
-
-    FE -->|HTTPS + JWT| LB
-    LB --> AUTH
-    AUTH --> RL
-    RL --> API
-    API --- MODS
-    API --> PG
-    API --> REDIS
-    API --> GCS
-    API --> QDRANT
-    API -->|dispatch tasks| CELERY
-    CELERY --- JOBS
-    JOBS --> PG
-    JOBS --> GCS
-    JOBS --> QDRANT
-    JOBS --> EMB
-    JOBS --> RAPTOR
-    API --> EMB
-    API --> RERANK
-    API --> RAPTOR
-    API --> LLM
-    API --> LOG
-    API --> MON
-    API --> SENTRY
-    API --> OTEL
+    User --> App
+    Docs --> App
+    App --> MW
+    MW --> Routes
+    Routes --> Core
+    Routes --> PG
+    Routes --> Redis
+    Routes --> Qdrant
+    Routes --> MinIO
+    Routes --> Celery
+    Celery --> Ingest
+    Celery --> Eval
+    Ingest --> PG
+    Ingest --> Qdrant
+    Ingest --> MinIO
+    Eval --> PG
+    Core --> Ollama
+    Core --> Anthropic
+    Core --> Groq
+    Core --> OpenAI
 ```
 
----
+### 2.2 Current Service Inventory
 
-## 2. Detailed Component Diagram
+| Service | Responsibility | Local Address |
+| --- | --- | --- |
+| FastAPI API | Public API, auth, retrieval, generation, admin, metrics | `http://localhost:8000` |
+| PostgreSQL | Relational metadata and operational state | `localhost:5432` |
+| Redis | Celery broker, cache, rate limiting state | `localhost:6379` |
+| Qdrant | Vector storage for chunk and summary embeddings | `http://localhost:6335` |
+| MinIO | S3-compatible document and artifact storage | `http://localhost:9000` |
+| MinIO Console | Local object store console | `http://localhost:9002` |
+| Ollama | Default local LLM endpoint | `http://localhost:11435` |
+| Celery Worker | Background ingestion and evaluation jobs | internal Docker service |
+
+### 2.3 Current Request Path
+
+#### Query path
+
+1. Client sends request to FastAPI
+2. Auth middleware validates Clerk JWT or applies development bypass
+3. Retrieval layer embeds the query and searches Qdrant
+4. RAPTOR traversal expands chunk hits into section / topic / document context
+5. Generation layer builds the prompt and calls the configured LLM provider
+6. Response is stored and returned with citations
+
+#### Ingestion path
+
+1. Client uploads document metadata and file
+2. API stores metadata in PostgreSQL and raw object in MinIO
+3. Celery worker extracts text, chunks content, embeds chunks, and builds RAPTOR nodes
+4. Embeddings are written to Qdrant
+5. Tree / artifact outputs are written to object storage
+6. Job and document status are updated in PostgreSQL
+
+## 3. Current Code Map
+
+| Area | Key Files |
+| --- | --- |
+| Application entrypoint | `app/main.py` |
+| Configuration | `app/core/config.py` |
+| Auth / security | `app/core/security.py` |
+| Middleware | `app/core/middleware.py` |
+| Generation | `app/core/generation.py` |
+| Retrieval | `app/core/retrieval_orchestrator.py` |
+| RAPTOR tree building | `app/core/raptor_tree_builder.py` |
+| API routes | `app/api/v2/routes/*.py` |
+| Worker tasks | `app/workers/tasks/*.py` |
+| Database models | `app/db/models/*.py` |
+| Migrations | `alembic/versions/001_initial_schema.py` |
+| Local orchestration | `docker-compose.yml` |
+
+## 4. Authentication and Authorization
+
+### Current behavior
+
+- Clerk is the intended identity provider
+- Protected v2 endpoints use JWT-based auth middleware
+- Webhook endpoint supports user synchronization
+- Development bypass exists only when the app is explicitly in development and Clerk secrets are not configured
+- Route-level RBAC is enforced through dependencies such as `get_current_user` and role checks
+
+### Current role model
+
+- `admin`
+- `editor`
+- `viewer`
+
+## 5. Storage Responsibilities
+
+### PostgreSQL
+
+Stores structured application data:
+
+- users
+- workspaces
+- collections
+- documents
+- ingestion jobs
+- chat sessions and messages
+- feedback
+- evaluation runs
+- training runs
+- audit logs
+- model metadata
+
+### Qdrant
+
+Stores vectorized retrieval data:
+
+- chunk embeddings
+- summary-node embeddings
+- collection-scoped metadata for filtered retrieval
+
+### MinIO / S3-compatible storage
+
+Stores binary and artifact data:
+
+- uploaded source files
+- extracted / processed artifacts
+- RAPTOR tree outputs
+- model artifacts
+- exports and backups
+
+### Redis
+
+Stores ephemeral and queue data:
+
+- Celery broker state
+- cache entries
+- rate-limit counters
+- short-lived coordination data
+
+## 6. API Surface
+
+The application mounts the following v2 route groups under `/api/v2`:
+
+| Group | Responsibility |
+| --- | --- |
+| `health` | live / ready checks |
+| `auth` | Clerk webhook and current user info |
+| `workspaces` | workspace CRUD |
+| `collections` | collection CRUD |
+| `documents` | upload, list, status, delete |
+| `chat` | session creation, listing, retrieval, messaging |
+| `retrieve` | standalone retrieval |
+| `generate` | standalone generation |
+| `feedback` | feedback submission and listing |
+| `eval` | evaluation run creation and tracking |
+| `training` | training run creation and tracking |
+| `admin` | stats, audit, model-admin functions |
+
+Legacy v1 routes are still mounted for backward compatibility but are deprecated.
+
+## 7. Local Deployment Profile
+
+The local development profile uses Docker Compose with these practical details:
+
+- Qdrant host port is remapped to `6335` because `6333` may already be in use on the host
+- MinIO console host port is remapped to `9002` because `9001` may be reserved on Windows hosts
+- API and worker containers access Ollama through `http://host.docker.internal:11435`
+- Compose currently sets the default LLM provider to Ollama
+
+## 8. Target Production Deployment
+
+The target production deployment remains cloud-oriented and more opinionated than the current local stack.
 
 ```mermaid
-flowchart LR
-    subgraph Users
-        IND["Individual Users"]
-        TEAM["Teams / Org Users"]
-        ADM["Admins"]
+flowchart TB
+    subgraph Client
+        FE[Next.js Frontend]
+        Ops[Admin / Ops UI]
     end
 
-    subgraph Frontend["Next.js Frontend"]
-        LOGIN["Login / Signup"]
-        DASH["Workspace Dashboard"]
-        COLL["Collection Management"]
-        UPLOAD["Document Upload"]
-        STATUS["Ingestion Status"]
-        CHAT["Chat Interface"]
-        CITE["Citation Panel"]
-        FB["Feedback Actions"]
-        ADMIN["Admin / Ops Screens"]
+    subgraph Edge
+        LB[HTTPS Load Balancer]
+        Clerk[Clerk]
+        WAF[Rate Limiting / Security Controls]
     end
 
-    subgraph AuthProv["Auth Provider — Clerk / Auth0"]
-        IDENT["User Identity"]
-        SESS["Session Handling"]
-        JWT["JWT Issuance"]
-        ROLES["Role Metadata"]
+    subgraph App
+        API[FastAPI on Cloud Run or equivalent]
+        Worker[Celery Workers or managed job runners]
     end
 
-    subgraph FastAPI["FastAPI API — Cloud Run"]
-        direction TB
-        APIS["/auth /users /workspaces /collections<br/>/documents /ingestion /chat /retrieve<br/>/generate /feedback /eval /admin"]
-        SVC["Auth MW · RBAC · Validation<br/>Session Svc · Retrieval Orchestrator<br/>Prompt Builder · Citation Builder<br/>Model Router · Job Dispatcher · Audit Logger"]
+    subgraph Data
+        CloudSQL[Managed PostgreSQL]
+        Memorystore[Managed Redis]
+        ObjectStore[GCS or managed S3-compatible storage]
+        VectorDB[Managed Qdrant or equivalent]
     end
 
-    subgraph DataStores
-        PG2["PostgreSQL / Cloud SQL<br/>users · workspaces · collections<br/>documents · chunks_metadata · tree_nodes<br/>ingestion_jobs · sessions · messages<br/>feedback · eval_runs · audit_logs<br/>model_registry"]
-        REDIS2["Redis / Memorystore<br/>Celery queue · cache<br/>rate limits · session cache"]
-        GCS2["GCS<br/>raw files · extracted text · cleaned text<br/>RAPTOR trees · chunk exports<br/>eval outputs · model artifacts · backups"]
-        VEC["Qdrant / pgvector<br/>chunk embeddings · metadata<br/>filtered search · similarity"]
+    subgraph AI
+        Embed[Embedding Models]
+        Rerank[Reranker]
+        Router[LLM Router]
+        Providers[Anthropic / OpenAI / Groq / local serving]
     end
 
-    subgraph Workers["Celery Workers"]
-        W1["1. validate document"]
-        W2["2. fetch raw file"]
-        W3["3. extract text"]
-        W4["4. normalize / clean"]
-        W5["5. create chunks"]
-        W6["6. create embeddings"]
-        W7["7. build RAPTOR tree"]
-        W8["8. store vector index"]
-        W9["9. save tree artifacts"]
-        W10["10. update status"]
-        W11["11. eval / feedback processing"]
+    subgraph OpsLayer
+        Sentry[Sentry]
+        Metrics[Prometheus / Cloud Monitoring]
+        Tracing[OpenTelemetry]
+        CI[GitHub Actions]
     end
 
-    subgraph Intelligence["AI / Knowledge Layer"]
-        EMB2["Embedding Model"]
-        RR["Reranker"]
-        RAPT["RAPTOR Traversal<br/>chunk→section→topic→document"]
-        LITELLM["LiteLLM Router<br/>OpenAI · Anthropic · Groq · vLLM"]
-    end
-
-    Users --> Frontend
-    Frontend -->|JWT| AuthProv
-    AuthProv --> FastAPI
-    FastAPI --> DataStores
-    FastAPI -->|dispatch| Workers
-    Workers --> DataStores
-    Workers --> Intelligence
-    FastAPI --> Intelligence
-    Intelligence -->|answer + citations| FastAPI
+    FE --> LB
+    Ops --> LB
+    LB --> Clerk
+    Clerk --> WAF
+    WAF --> API
+    API --> CloudSQL
+    API --> Memorystore
+    API --> ObjectStore
+    API --> VectorDB
+    API --> Worker
+    Worker --> CloudSQL
+    Worker --> ObjectStore
+    Worker --> VectorDB
+    API --> Embed
+    API --> Rerank
+    API --> Router
+    Router --> Providers
+    API --> Sentry
+    API --> Metrics
+    API --> Tracing
+    Worker --> Metrics
+    CI --> API
 ```
 
----
+### Production intent
 
-## 3. Sequence Diagram — Document Upload + Ingestion
+- Managed relational database
+- Managed vector database or hardened self-hosted vector layer
+- Managed object storage
+- CI/CD with deployment gates
+- Observability and alerting enabled by default
+- Stronger secret validation and rotation
+- Modern frontend replacing the remaining legacy/demo UI path
 
-```mermaid
-sequenceDiagram
-    participant U as User
-    participant FE as Frontend
-    participant AUTH as Auth Provider
-    participant API as FastAPI
-    participant PG as PostgreSQL
-    participant GCS as GCS
-    participant Q as Redis/Celery
-    participant W as Worker
-    participant EMB as Embedding Model
-    participant VDB as Qdrant
+## 9. Known Architectural Gaps
 
-    U->>FE: Upload document
-    FE->>AUTH: Validate JWT
-    AUTH-->>FE: Valid
-    FE->>API: POST /documents (file + metadata)
-    API->>API: Validate auth + file type/size
-    API->>PG: Insert document record (status=processing)
-    API->>GCS: Upload raw file
-    API->>PG: Create ingestion_job (status=pending)
-    API->>Q: Dispatch ingestion task
-    API-->>FE: 201 Created (document_id, job_id)
+The repository is not yet at the final target state. The most important gaps are:
 
-    Q->>W: Pick up task
-    W->>GCS: Download raw file
-    W->>W: Extract text
-    W->>W: Normalize / clean
-    W->>W: Chunk text
-    W->>EMB: Generate embeddings
-    W->>W: Build RAPTOR tree
-    W->>VDB: Upsert vectors
-    W->>GCS: Save tree artifacts
-    W->>PG: Update job status=completed
-    W->>PG: Update document status=ready
-```
+- frontend is not yet at the planned modern production shape
+- backup and disaster recovery automation are not complete
+- generation fallback behavior is not fully standardized across providers
+- some legacy demo-era code and documentation still exist outside the main v2 path
+- citation enrichment and streaming are still roadmap items
 
----
+Those gaps are tracked in `ROADMAP_TO_100.md`.
 
-## 4. Sequence Diagram — Chat / Query Flow
+## 10. Source of Truth
 
-```mermaid
-sequenceDiagram
-    participant U as User
-    participant FE as Frontend
-    participant API as FastAPI
-    participant PG as PostgreSQL
-    participant EMB as Embedding Model
-    participant VDB as Qdrant
-    participant RR as Reranker
-    participant RAPT as RAPTOR Engine
-    participant LLM as LLM Provider
+Use these files as the operational source of truth:
 
-    U->>FE: Ask question
-    FE->>API: POST /chat/sessions/{id}/messages
-    API->>PG: Store user message
-    API->>EMB: Generate query embedding
-    API->>VDB: Semantic search (top_k chunks)
-    VDB-->>API: Candidate chunks
-    API->>RR: Rerank chunks
-    RR-->>API: Reranked chunks
-    API->>RAPT: Traverse RAPTOR hierarchy
-    RAPT-->>API: Context (chunk→section→topic→doc)
-    API->>API: Build prompt (context + history)
-    API->>LLM: Generate answer
-    LLM-->>API: Grounded response
-    API->>API: Extract citations
-    API->>PG: Store assistant message + metadata
-    API-->>FE: Answer + citations + model info
-    FE->>U: Display answer + source panel
-```
-
----
-
-## 5. Feedback / Improvement Loop
-
-```mermaid
-sequenceDiagram
-    participant U as User
-    participant FE as Frontend
-    participant API as FastAPI
-    participant PG as PostgreSQL
-    participant W as Worker
-
-    U->>FE: Rate response (1-5) + comment
-    FE->>API: POST /feedback
-    API->>PG: Store feedback
-    API-->>FE: 201 OK
-
-    Note over W,PG: Periodic batch job
-    W->>PG: Fetch low-rated feedback
-    W->>W: Generate preference pairs
-    W->>PG: Store preference_pairs
-    W->>W: Run eval pipeline
-    W->>PG: Store eval_run results
-```
-
----
-
-## 6. Database Schema
-
-### Tables
-
-```sql
--- Identity
-CREATE TABLE users (
-    id            UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    clerk_id      TEXT UNIQUE NOT NULL,
-    email         TEXT UNIQUE NOT NULL,
-    display_name  TEXT,
-    role          TEXT DEFAULT 'user',
-    created_at    TIMESTAMPTZ DEFAULT NOW(),
-    updated_at    TIMESTAMPTZ DEFAULT NOW()
-);
-
--- Multi-tenancy
-CREATE TABLE workspaces (
-    id         UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    name       TEXT NOT NULL,
-    owner_id   UUID REFERENCES users(id) ON DELETE CASCADE,
-    settings   JSONB DEFAULT '{}',
-    created_at TIMESTAMPTZ DEFAULT NOW(),
-    updated_at TIMESTAMPTZ DEFAULT NOW()
-);
-
-CREATE TABLE workspace_members (
-    workspace_id UUID REFERENCES workspaces(id) ON DELETE CASCADE,
-    user_id      UUID REFERENCES users(id) ON DELETE CASCADE,
-    role         TEXT DEFAULT 'member',
-    joined_at    TIMESTAMPTZ DEFAULT NOW(),
-    PRIMARY KEY (workspace_id, user_id)
-);
-
--- Knowledge organization
-CREATE TABLE collections (
-    id           UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    workspace_id UUID REFERENCES workspaces(id) ON DELETE CASCADE,
-    name         TEXT NOT NULL,
-    description  TEXT,
-    settings     JSONB DEFAULT '{}',
-    created_at   TIMESTAMPTZ DEFAULT NOW(),
-    updated_at   TIMESTAMPTZ DEFAULT NOW()
-);
-
--- Documents
-CREATE TABLE documents (
-    id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    collection_id   UUID REFERENCES collections(id) ON DELETE CASCADE,
-    filename        TEXT NOT NULL,
-    content_type    TEXT NOT NULL,
-    file_size_bytes BIGINT,
-    storage_key     TEXT NOT NULL,
-    metadata        JSONB DEFAULT '{}',
-    status          TEXT DEFAULT 'uploaded',
-    created_at      TIMESTAMPTZ DEFAULT NOW(),
-    updated_at      TIMESTAMPTZ DEFAULT NOW()
-);
-
-CREATE TABLE document_versions (
-    id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    document_id UUID REFERENCES documents(id) ON DELETE CASCADE,
-    version     INT NOT NULL,
-    storage_key TEXT NOT NULL,
-    chunk_count INT,
-    created_at  TIMESTAMPTZ DEFAULT NOW()
-);
-
--- Chunk & tree metadata
-CREATE TABLE chunks_metadata (
-    id            UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    document_id   UUID REFERENCES documents(id) ON DELETE CASCADE,
-    collection_id UUID REFERENCES collections(id) ON DELETE CASCADE,
-    chunk_index   INT NOT NULL,
-    text_hash     TEXT NOT NULL,
-    word_start    INT,
-    word_end      INT,
-    page_number   INT,
-    section_title TEXT,
-    vector_id     TEXT,
-    created_at    TIMESTAMPTZ DEFAULT NOW()
-);
-
-CREATE TABLE tree_nodes (
-    id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    collection_id   UUID REFERENCES collections(id) ON DELETE CASCADE,
-    document_id     UUID REFERENCES documents(id) ON DELETE CASCADE,
-    parent_id       UUID REFERENCES tree_nodes(id) ON DELETE SET NULL,
-    node_type       TEXT NOT NULL,  -- 'document', 'topic', 'section', 'chunk'
-    level           INT NOT NULL DEFAULT 0,
-    label           TEXT,
-    summary         TEXT,
-    vector_id       TEXT,
-    children_count  INT DEFAULT 0,
-    metadata        JSONB DEFAULT '{}',
-    created_at      TIMESTAMPTZ DEFAULT NOW()
-);
-
--- Processing
-CREATE TABLE ingestion_jobs (
-    id            UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    document_id   UUID REFERENCES documents(id) ON DELETE CASCADE,
-    status        TEXT DEFAULT 'pending',
-    current_stage TEXT,
-    progress_pct  SMALLINT DEFAULT 0,
-    chunk_count   INT,
-    error_message TEXT,
-    started_at    TIMESTAMPTZ,
-    completed_at  TIMESTAMPTZ,
-    created_at    TIMESTAMPTZ DEFAULT NOW()
-);
-
--- Chat
-CREATE TABLE chat_sessions (
-    id            UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    user_id       UUID REFERENCES users(id) ON DELETE CASCADE,
-    collection_id UUID REFERENCES collections(id) ON DELETE CASCADE,
-    title         TEXT,
-    created_at    TIMESTAMPTZ DEFAULT NOW(),
-    updated_at    TIMESTAMPTZ DEFAULT NOW()
-);
-
-CREATE TABLE chat_messages (
-    id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    session_id  UUID REFERENCES chat_sessions(id) ON DELETE CASCADE,
-    role        TEXT NOT NULL,
-    content     TEXT NOT NULL,
-    citations   JSONB,
-    model_used  TEXT,
-    latency_ms  INT,
-    token_count INT,
-    created_at  TIMESTAMPTZ DEFAULT NOW()
-);
-
--- Feedback
-CREATE TABLE feedback (
-    id         UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    message_id UUID UNIQUE REFERENCES chat_messages(id) ON DELETE CASCADE,
-    rating     SMALLINT NOT NULL CHECK (rating BETWEEN 1 AND 5),
-    comment    TEXT,
-    created_at TIMESTAMPTZ DEFAULT NOW()
-);
-
-CREATE TABLE preference_pairs (
-    id       UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    prompt   TEXT NOT NULL,
-    chosen   TEXT NOT NULL,
-    rejected TEXT NOT NULL,
-    source   TEXT,
-    created_at TIMESTAMPTZ DEFAULT NOW()
-);
-
--- Training
-CREATE TABLE training_runs (
-    id             UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    run_type       TEXT NOT NULL,
-    status         TEXT DEFAULT 'pending',
-    base_model     TEXT NOT NULL,
-    pair_count     INT,
-    epochs         INT,
-    metrics        JSONB,
-    adapter_s3_key TEXT,
-    error_message  TEXT,
-    started_at     TIMESTAMPTZ,
-    completed_at   TIMESTAMPTZ,
-    created_at     TIMESTAMPTZ DEFAULT NOW()
-);
-
--- Evaluation
-CREATE TABLE eval_runs (
-    id            UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    collection_id UUID REFERENCES collections(id) ON DELETE SET NULL,
-    eval_type     TEXT NOT NULL,
-    status        TEXT DEFAULT 'pending',
-    config        JSONB DEFAULT '{}',
-    results       JSONB,
-    error_message TEXT,
-    started_at    TIMESTAMPTZ,
-    completed_at  TIMESTAMPTZ,
-    created_at    TIMESTAMPTZ DEFAULT NOW()
-);
-
--- Operations
-CREATE TABLE model_registry (
-    id           UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    name         TEXT NOT NULL,
-    version      TEXT NOT NULL,
-    model_type   TEXT NOT NULL,
-    storage_key  TEXT,
-    metrics      JSONB,
-    is_active    BOOLEAN DEFAULT FALSE,
-    created_at   TIMESTAMPTZ DEFAULT NOW(),
-    UNIQUE(name, version)
-);
-
-CREATE TABLE audit_logs (
-    id         UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    user_id    UUID REFERENCES users(id) ON DELETE SET NULL,
-    action     TEXT NOT NULL,
-    resource   TEXT NOT NULL,
-    resource_id UUID,
-    details    JSONB,
-    ip_address TEXT,
-    created_at TIMESTAMPTZ DEFAULT NOW()
-);
-```
-
----
-
-## 7. Storage System Responsibilities
-
-### PostgreSQL (Cloud SQL)
-Structured app data:
-- Users, workspaces, collections
-- Document metadata and processing state
-- Chunk metadata and tree node references
-- Chat sessions and messages
-- Feedback and preference pairs
-- Evaluations and training runs
-- Audit logs and model registry
-
-### Qdrant / pgvector
-Vector embeddings:
-- Chunk embeddings per collection
-- Top-k similarity retrieval
-- Metadata-filtered search (by document, collection, type)
-
-### Google Cloud Storage (GCS)
-Object/file storage:
-- Original file uploads
-- Extracted and cleaned text
-- RAPTOR tree JSON artifacts
-- Chunk exports
-- Evaluation outputs
-- Model artifacts/checkpoints
-- Backups and snapshots
-
-### Redis (Memorystore)
-Ephemeral / queue:
-- Celery task queue + retry queue
-- Response caching
-- Rate-limit counters
-- Temporary session data
-
----
-
-## 8. API Surface (v2)
-
-| Group | Endpoint | Method | Description |
-|-------|----------|--------|-------------|
-| **Health** | `/api/v2/health/live` | GET | Liveness probe |
-| | `/api/v2/health/ready` | GET | Readiness probe (all backends) |
-| **Auth** | `/api/v2/auth/webhook` | POST | Clerk webhook (user sync) |
-| | `/api/v2/auth/me` | GET | Current user profile |
-| **Users** | `/api/v2/users/{id}` | GET | User profile |
-| **Workspaces** | `/api/v2/workspaces` | POST/GET | Create / list workspaces |
-| | `/api/v2/workspaces/{id}` | GET/DELETE | Get / delete workspace |
-| **Collections** | `/api/v2/workspaces/{wid}/collections` | POST/GET | Create / list |
-| | `/api/v2/workspaces/{wid}/collections/{cid}` | GET/DELETE | Get / delete |
-| **Documents** | `/api/v2/collections/{cid}/documents` | POST/GET | Upload / list |
-| | `/api/v2/collections/{cid}/documents/{did}` | GET/DELETE | Get / delete |
-| | `/api/v2/collections/{cid}/documents/{did}/status` | GET | Ingestion status |
-| **Chat** | `/api/v2/chat/sessions` | POST/GET | Create / list sessions |
-| | `/api/v2/chat/sessions/{sid}` | GET/DELETE | Get / delete session |
-| | `/api/v2/chat/sessions/{sid}/messages` | POST | Send message (RAG) |
-| **Retrieve** | `/api/v2/retrieve` | POST | Standalone semantic search |
-| **Generate** | `/api/v2/generate` | POST | Standalone generation (context + LLM) |
-| **Feedback** | `/api/v2/feedback` | POST/GET | Submit / list feedback |
-| **Training** | `/api/v2/training/runs` | POST/GET | Start / list training runs |
-| | `/api/v2/training/runs/{rid}` | GET | Training run details |
-| **Eval** | `/api/v2/eval/runs` | POST/GET | Start / list eval runs |
-| | `/api/v2/eval/runs/{rid}` | GET | Eval run details |
-| **Admin** | `/api/v2/admin/stats` | GET | Platform statistics |
-| | `/api/v2/admin/models` | GET/POST | Model registry |
-| | `/api/v2/admin/audit-logs` | GET | Audit log viewer |
-
----
-
-## 9. Architecture Zones (for diagramming)
-
-| Zone | Components |
-|------|------------|
-| **1. Client** | Next.js, Upload UI, Chat UI, Citation Panel, Feedback Panel, Admin Dashboard |
-| **2. Security / Edge** | Clerk/Auth0, JWT validation, RBAC, Rate limiting, Audit logging, CORS |
-| **3. Application** | FastAPI API, Session management, Document APIs, Retrieval APIs, Generation APIs, Feedback APIs, Admin APIs |
-| **4. Processing** | Celery workers, Async ingestion, Parsing, Chunking, Embedding, RAPTOR tree generation, Reindexing, Batch eval |
-| **5. Storage** | PostgreSQL (metadata), Qdrant/pgvector (vectors), GCS (files), Redis (queue/cache) |
-| **6. Operations** | Cloud Logging, Cloud Monitoring, Sentry, OpenTelemetry, Alerts, Backups, CI/CD, Secret management |
-
----
-
-## 10. Key Data Flows
-
-### Ingestion Path
-```
-User upload → FastAPI → GCS (raw) + Postgres (metadata)
-  → Redis/Celery → Worker: parse → normalize → chunk → embed → RAPTOR tree
-  → Qdrant (vectors) + GCS (artifacts) + Postgres (status)
-```
-
-### Query Path
-```
-User question → FastAPI → Embedding model → Qdrant (top-k)
-  → Reranker → RAPTOR traversal (chunk→section→topic→doc)
-  → LiteLLM/LLM → Answer + citations → Frontend
-```
-
-### Improvement Path
-```
-User feedback → Postgres → Eval/review pipeline → Preference pairs
-  → Training run (DPO/SFT) → Model registry → Active model update
-```
-
----
-
-## 11. Simplified Production Diagram
-
-```
-Users
-  ↓
-Next.js Frontend
-  ↓
-Auth Provider (Clerk/Auth0)
-  ↓
-FastAPI API (Cloud Run)
-  ├── PostgreSQL / Cloud SQL
-  ├── Redis / Memorystore
-  ├── Google Cloud Storage
-  ├── Qdrant
-  ├── Celery Workers
-  ├── RAPTOR Retrieval Engine
-  ├── LiteLLM / LLM Providers
-  └── Monitoring / Logging / Sentry
-```
-
----
-
-## 12. Future Optional Components
-
-- OCR service for scanned PDFs
-- Web crawler ingestion for URLs/websites
-- Docx/Excel parser extensions
-- Multi-tenant organization support
-- Policy engine
-- Dataset review queue
-- Training service (full MLOps)
-- Model registry UI
-- Canary deployment manager
-- Cost analytics dashboard
-- Billing/subscription service
+- `docker-compose.yml` for local runtime wiring
+- `.env.example` for environment configuration contract
+- `app/main.py` for active API mount points
+- `app/core/config.py` for configuration behavior
+- `ROADMAP_TO_100.md` for readiness scoring and remaining engineering work

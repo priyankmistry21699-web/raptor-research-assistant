@@ -6,21 +6,21 @@
 
 ## Current State (v1 — Research Demo)
 
-| Aspect | Status |
-|--------|--------|
-| 18-step RAPTOR pipeline | ✅ Complete |
-| 204 ML/DL papers indexed | ✅ 148,986 chunks in ChromaDB |
-| Hybrid retrieval (vector + tree) | ✅ Working |
-| Multi-model LLM (Ollama + Groq + LoRA) | ✅ Working |
-| Feedback → DPO fine-tuning loop | ✅ Working |
-| RAGAS evaluation | ✅ Working |
-| Gradio UI (4 tabs) | ✅ Working |
-| FastAPI backend (50+ endpoints) | ✅ Working |
-| 208 tests | ✅ Passing |
-| Auth / multi-tenant | ❌ None |
-| Docker / CI-CD | ❌ None |
-| Persistent DB | ❌ In-memory + JSONL files |
-| Monitoring | ❌ None |
+| Aspect                                 | Status                        |
+| -------------------------------------- | ----------------------------- |
+| 18-step RAPTOR pipeline                | ✅ Complete                   |
+| 204 ML/DL papers indexed               | ✅ 148,986 chunks in ChromaDB |
+| Hybrid retrieval (vector + tree)       | ✅ Working                    |
+| Multi-model LLM (Ollama + Groq + LoRA) | ✅ Working                    |
+| Feedback → DPO fine-tuning loop        | ✅ Working                    |
+| RAGAS evaluation                       | ✅ Working                    |
+| Gradio UI (4 tabs)                     | ✅ Working                    |
+| FastAPI backend (50+ endpoints)        | ✅ Working                    |
+| 208 tests                              | ✅ Passing                    |
+| Auth / multi-tenant                    | ❌ None                       |
+| Docker / CI-CD                         | ❌ None                       |
+| Persistent DB                          | ❌ In-memory + JSONL files    |
+| Monitoring                             | ❌ None                       |
 
 ---
 
@@ -44,75 +44,82 @@ A multi-tenant, containerized, observable RAG platform with:
 ## Recommended Stack
 
 ### Frontend
-| Technology | Purpose |
-|-----------|---------|
-| Next.js | React framework, SSR, routing |
-| Tailwind CSS | Utility-first styling |
-| shadcn/ui | Accessible component library |
+
+| Technology   | Purpose                       |
+| ------------ | ----------------------------- |
+| Next.js      | React framework, SSR, routing |
+| Tailwind CSS | Utility-first styling         |
+| shadcn/ui    | Accessible component library  |
 
 ### Backend
-| Technology | Purpose |
-|-----------|---------|
-| FastAPI | Async API framework |
-| Pydantic | Request/response validation |
-| SQLAlchemy | ORM for PostgreSQL |
-| Alembic | Database migrations |
+
+| Technology | Purpose                     |
+| ---------- | --------------------------- |
+| FastAPI    | Async API framework         |
+| Pydantic   | Request/response validation |
+| SQLAlchemy | ORM for PostgreSQL          |
+| Alembic    | Database migrations         |
 
 ### Data / Infrastructure
-| Technology | Purpose |
-|-----------|---------|
-| PostgreSQL | Persistent relational DB |
-| Qdrant | Production vector database (replaces ChromaDB) |
-| Redis | Caching, session store, job queue broker |
-| S3 / MinIO | File storage (uploaded documents) |
+
+| Technology | Purpose                                        |
+| ---------- | ---------------------------------------------- |
+| PostgreSQL | Persistent relational DB                       |
+| Qdrant     | Production vector database (replaces ChromaDB) |
+| Redis      | Caching, session store, job queue broker       |
+| S3 / MinIO | File storage (uploaded documents)              |
 
 ### Background Jobs
-| Technology | Purpose |
-|-----------|---------|
-| Celery | Distributed task queue |
+
+| Technology | Purpose                |
+| ---------- | ---------------------- |
+| Celery     | Distributed task queue |
 
 ### AI Layer
-| Technology | Purpose |
-|-----------|---------|
-| SentenceTransformers / BGE | Embeddings |
-| BGE reranker | Re-ranking retrieved results |
-| LiteLLM | Unified LLM routing |
-| vLLM (optional) | High-throughput local inference |
-| Ollama | Local dev only |
+
+| Technology                 | Purpose                         |
+| -------------------------- | ------------------------------- |
+| SentenceTransformers / BGE | Embeddings                      |
+| BGE reranker               | Re-ranking retrieved results    |
+| LiteLLM                    | Unified LLM routing             |
+| vLLM (optional)            | High-throughput local inference |
+| Ollama                     | Local dev only                  |
 
 ### Auth
-| Technology | Purpose |
-|-----------|---------|
+
+| Technology        | Purpose                          |
+| ----------------- | -------------------------------- |
 | Clerk (preferred) | Authentication + user management |
 
 ### Monitoring / Ops
-| Technology | Purpose |
-|-----------|---------|
-| Prometheus | Metrics collection |
-| Grafana | Dashboards |
-| Sentry | Error tracking |
-| GitHub Actions | CI/CD |
-| Docker / Docker Compose | Containerization |
+
+| Technology              | Purpose            |
+| ----------------------- | ------------------ |
+| Prometheus              | Metrics collection |
+| Grafana                 | Dashboards         |
+| Sentry                  | Error tracking     |
+| GitHub Actions          | CI/CD              |
+| Docker / Docker Compose | Containerization   |
 
 ---
 
 ## Implementation Order
 
-| Phase | Focus | Priority |
-|-------|-------|----------|
-| 1 | Infrastructure (Docker, DB, services) | 🔴 Critical |
-| 2 | Data model (SQLAlchemy + Alembic) | 🔴 Critical |
-| 3 | Authentication (Clerk) | 🔴 Critical |
-| 4 | Upload / storage (MinIO) | 🟠 High |
-| 5 | Background indexing (Celery) | 🟠 High |
-| 6 | Retrieval (Qdrant) | 🟠 High |
-| 7 | Generation (LiteLLM) | 🟠 High |
-| 8 | Citations | 🟡 Medium |
-| 9 | Feedback | 🟡 Medium |
-| 10 | Observability (Prometheus, Sentry) | 🟡 Medium |
-| 11 | Backups | 🟢 Low |
-| 12 | CI/CD | 🟢 Low |
-| 13 | Security hardening | 🟢 Low |
+| Phase | Focus                                 | Priority    |
+| ----- | ------------------------------------- | ----------- |
+| 1     | Infrastructure (Docker, DB, services) | 🔴 Critical |
+| 2     | Data model (SQLAlchemy + Alembic)     | 🔴 Critical |
+| 3     | Authentication (Clerk)                | 🔴 Critical |
+| 4     | Upload / storage (MinIO)              | 🟠 High     |
+| 5     | Background indexing (Celery)          | 🟠 High     |
+| 6     | Retrieval (Qdrant)                    | 🟠 High     |
+| 7     | Generation (LiteLLM)                  | 🟠 High     |
+| 8     | Citations                             | 🟡 Medium   |
+| 9     | Feedback                              | 🟡 Medium   |
+| 10    | Observability (Prometheus, Sentry)    | 🟡 Medium   |
+| 11    | Backups                               | 🟢 Low      |
+| 12    | CI/CD                                 | 🟢 Low      |
+| 13    | Security hardening                    | 🟢 Low      |
 
 ---
 
@@ -193,67 +200,67 @@ By end of 2 days, have:
 
 ## Week 1 MVP Goals
 
-| Feature | Description |
-|---------|-------------|
-| Sign in / auth | Clerk-based login |
-| Workspace support | Isolated data per workspace |
-| Document upload | PDF/DOCX/TXT via UI or API |
-| Ingestion status | Job progress tracking |
-| Parsing + chunking | PyMuPDF + smart chunking |
-| Embeddings | BGE or SentenceTransformers |
-| Qdrant indexing | Vector storage with metadata |
+| Feature                | Description                         |
+| ---------------------- | ----------------------------------- |
+| Sign in / auth         | Clerk-based login                   |
+| Workspace support      | Isolated data per workspace         |
+| Document upload        | PDF/DOCX/TXT via UI or API          |
+| Ingestion status       | Job progress tracking               |
+| Parsing + chunking     | PyMuPDF + smart chunking            |
+| Embeddings             | BGE or SentenceTransformers         |
+| Qdrant indexing        | Vector storage with metadata        |
 | RAPTOR tree generation | Hierarchical clustering + summaries |
-| Retrieval API | Hybrid vector + tree search |
-| Answer generation | LiteLLM-routed LLM calls |
-| Citations | Source attribution in responses |
-| Chat persistence | PostgreSQL-backed sessions |
+| Retrieval API          | Hybrid vector + tree search         |
+| Answer generation      | LiteLLM-routed LLM calls            |
+| Citations              | Source attribution in responses     |
+| Chat persistence       | PostgreSQL-backed sessions          |
 
 ---
 
 ## Week 2–3 Goals
 
-| Feature | Description |
-|---------|-------------|
-| Reranking | BGE reranker for better precision |
-| Better parsing | Handle tables, figures, multi-column |
-| Retries / error handling | Resilient ingestion + LLM calls |
-| Job progress tracking | Real-time status updates |
-| Security basics | Input validation, rate limiting |
-| Better citation metadata | Page numbers, section references |
-| Collection-scoped retrieval | Search within specific collections |
+| Feature                     | Description                          |
+| --------------------------- | ------------------------------------ |
+| Reranking                   | BGE reranker for better precision    |
+| Better parsing              | Handle tables, figures, multi-column |
+| Retries / error handling    | Resilient ingestion + LLM calls      |
+| Job progress tracking       | Real-time status updates             |
+| Security basics             | Input validation, rate limiting      |
+| Better citation metadata    | Page numbers, section references     |
+| Collection-scoped retrieval | Search within specific collections   |
 
 ---
 
 ## Month 1 Goals
 
-| Feature | Description |
-|---------|-------------|
-| Audit logs | Track all user actions |
-| Role-based access | Admin / editor / viewer roles |
-| Production S3 | AWS S3 or managed MinIO |
-| Secret management | Vault or AWS Secrets Manager |
-| Backup jobs | Automated DB + vector backups |
-| Restore plan | Tested disaster recovery |
-| CI/CD | GitHub Actions pipeline |
-| Tests | Integration + E2E test suite |
-| Eval framework | Automated quality regression |
-| Admin dashboard | System metrics + user management |
-| Model registry | Track model versions + performance |
+| Feature           | Description                        |
+| ----------------- | ---------------------------------- |
+| Audit logs        | Track all user actions             |
+| Role-based access | Admin / editor / viewer roles      |
+| Production S3     | AWS S3 or managed MinIO            |
+| Secret management | Vault or AWS Secrets Manager       |
+| Backup jobs       | Automated DB + vector backups      |
+| Restore plan      | Tested disaster recovery           |
+| CI/CD             | GitHub Actions pipeline            |
+| Tests             | Integration + E2E test suite       |
+| Eval framework    | Automated quality regression       |
+| Admin dashboard   | System metrics + user management   |
+| Model registry    | Track model versions + performance |
 
 ---
 
 ## Month 2 Goals
 
-| Feature | Description |
-|---------|-------------|
-| Prometheus + Grafana | Full observability stack |
-| OpenTelemetry | Distributed tracing |
-| Model cost tracking | Per-query cost attribution |
-| Canary deployment | Gradual rollout of new models |
-| Feedback review flow | Admin approval of training data |
-| Prompt versioning | Track and A/B test prompts |
-| Stronger tenant isolation | Data encryption at rest |
-| Governance/compliance | Data retention policies |
+| Feature                   | Description                     |
+| ------------------------- | ------------------------------- |
+| Prometheus + Grafana      | Full observability stack        |
+| OpenTelemetry             | Distributed tracing             |
+| Model cost tracking       | Per-query cost attribution      |
+| Canary deployment         | Gradual rollout of new models   |
+| Feedback review flow      | Admin approval of training data |
+| Prompt versioning         | Track and A/B test prompts      |
+| Stronger tenant isolation | Data encryption at rest         |
+| Governance/compliance     | Data retention policies         |
 
 ---
 
@@ -271,18 +278,20 @@ By end of 2 days, have:
 ## Required Credentials / Accounts
 
 ### Must Have to Start
-| Service | Credential |
-|---------|-----------|
-| GitHub | Repository access |
-| PostgreSQL | `DATABASE_URL` |
-| Redis | `REDIS_URL` |
-| MinIO or S3 | `S3_ENDPOINT`, `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY` |
-| Qdrant | `QDRANT_URL`, `QDRANT_API_KEY` (if managed) |
-| LLM provider | At least one: `OPENAI_API_KEY` / `ANTHROPIC_API_KEY` / `GROQ_API_KEY` |
-| Auth provider | `CLERK_SECRET_KEY`, `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY` |
-| Sentry (optional) | `SENTRY_DSN` |
+
+| Service           | Credential                                                            |
+| ----------------- | --------------------------------------------------------------------- |
+| GitHub            | Repository access                                                     |
+| PostgreSQL        | `DATABASE_URL`                                                        |
+| Redis             | `REDIS_URL`                                                           |
+| MinIO or S3       | `S3_ENDPOINT`, `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`           |
+| Qdrant            | `QDRANT_URL`, `QDRANT_API_KEY` (if managed)                           |
+| LLM provider      | At least one: `OPENAI_API_KEY` / `ANTHROPIC_API_KEY` / `GROQ_API_KEY` |
+| Auth provider     | `CLERK_SECRET_KEY`, `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY`               |
+| Sentry (optional) | `SENTRY_DSN`                                                          |
 
 ### Full `.env` Template
+
 ```bash
 # Database
 DATABASE_URL=postgresql://raptor:raptor@localhost:5432/raptor

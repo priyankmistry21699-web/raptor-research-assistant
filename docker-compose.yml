@@ -34,15 +34,10 @@ services:
     image: qdrant/qdrant:latest
     container_name: raptor-qdrant
     ports:
-      - "6333:6333"
+      - "6335:6333"
       - "6334:6334"
     volumes:
       - qdrant_data:/qdrant/storage
-    healthcheck:
-      test: ["CMD-SHELL", "wget -q --spider http://localhost:6333/readyz || exit 1"]
-      interval: 5s
-      timeout: 5s
-      retries: 5
 
   # ---------------------------------------------------------------------------
   # Redis — Cache, session store, Celery broker
@@ -72,7 +67,7 @@ services:
       MINIO_ROOT_PASSWORD: minioadmin
     ports:
       - "9000:9000"
-      - "9001:9001"
+      - "9002:9001"
     volumes:
       - minio_data:/data
     command: server /data --console-address ":9001"
@@ -139,11 +134,15 @@ services:
       redis:
         condition: service_healthy
       qdrant:
-        condition: service_healthy
+        condition: service_started
       minio:
         condition: service_healthy
     healthcheck:
-      test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://localhost:8000/api/v2/health/live')\""]
+      test:
+        [
+          "CMD-SHELL",
+          'python -c "import urllib.request; urllib.request.urlopen(''http://localhost:8000/api/v2/health/live'')"',
+        ]
       interval: 10s
       timeout: 5s
       retries: 5

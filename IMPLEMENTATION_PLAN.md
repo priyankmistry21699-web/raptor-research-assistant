@@ -7,11 +7,13 @@
 ## Day 1: Infrastructure + Data Model
 
 ### Task 1.1: Write `ARCHITECTURE.md`
+
 - **Status:** ✅ Done
 - **File:** `ARCHITECTURE.md`
 - **Acceptance:** System diagram, data flow, DB schema, folder structure, API design documented
 
 ### Task 1.2: Refactor Project Structure
+
 - **Status:** ⬜ Not started
 - **Create new directories:**
   ```
@@ -40,20 +42,22 @@
 - **Acceptance:** `python -m pytest tests/` still passes after restructure
 
 ### Task 1.3: Set Up Docker Compose
+
 - **Status:** ⬜ Not started
 - **File:** `docker-compose.yml`
 - **Services:**
 
-  | Service | Image | Ports | Volumes |
-  |---------|-------|-------|---------|
-  | `postgres` | `postgres:16-alpine` | `5432:5432` | `pgdata:/var/lib/postgresql/data` |
-  | `qdrant` | `qdrant/qdrant:latest` | `6333:6333`, `6334:6334` | `qdrant_data:/qdrant/storage` |
-  | `redis` | `redis:7-alpine` | `6379:6379` | `redis_data:/data` |
-  | `minio` | `minio/minio:latest` | `9000:9000`, `9001:9001` | `minio_data:/data` |
-  | `api` | Build from `Dockerfile` | `8000:8000` | App code mounted |
-  | `worker` | Build from `Dockerfile.worker` | — | App code mounted |
+  | Service    | Image                          | Ports                    | Volumes                           |
+  | ---------- | ------------------------------ | ------------------------ | --------------------------------- |
+  | `postgres` | `postgres:16-alpine`           | `5432:5432`              | `pgdata:/var/lib/postgresql/data` |
+  | `qdrant`   | `qdrant/qdrant:latest`         | `6333:6333`, `6334:6334` | `qdrant_data:/qdrant/storage`     |
+  | `redis`    | `redis:7-alpine`               | `6379:6379`              | `redis_data:/data`                |
+  | `minio`    | `minio/minio:latest`           | `9000:9000`, `9001:9001` | `minio_data:/data`                |
+  | `api`      | Build from `Dockerfile`        | `8000:8000`              | App code mounted                  |
+  | `worker`   | Build from `Dockerfile.worker` | —                        | App code mounted                  |
 
 - **File:** `Dockerfile`
+
   ```dockerfile
   FROM python:3.11-slim
   WORKDIR /app
@@ -64,6 +68,7 @@
   ```
 
 - **File:** `Dockerfile.worker`
+
   ```dockerfile
   FROM python:3.11-slim
   WORKDIR /app
@@ -76,6 +81,7 @@
 - **Acceptance:** `docker compose up -d` starts all 6 services, `docker compose ps` shows all healthy
 
 ### Task 1.4: Set Up SQLAlchemy + Alembic
+
 - **Status:** ⬜ Not started
 - **Files to create:**
   - `app/db/session.py` — async engine, session factory
@@ -92,6 +98,7 @@
 - **Acceptance:** `alembic current` runs without error
 
 ### Task 1.5: Create Initial DB Tables
+
 - **Status:** ⬜ Not started
 - **Files to create:**
   - `app/db/models/user.py` — `users` table
@@ -110,6 +117,7 @@
 - **Acceptance:** All tables created in Postgres, `\dt` shows 11 tables
 
 ### Task 1.6: Add Config Management
+
 - **Status:** ⬜ Not started
 - **Files to create:**
   - `.env.example` — all env vars with placeholder values
@@ -128,7 +136,7 @@
         SECRET_KEY: str = "change-me"
         DEBUG: bool = True
         LOG_LEVEL: str = "INFO"
-        
+
         class Config:
             env_file = ".env"
     ```
@@ -139,6 +147,7 @@
 ## Day 2: Upload Flow + Worker + Auth + Observability
 
 ### Task 2.1: Build Upload Flow Skeleton
+
 - **Status:** ⬜ Not started
 - **File:** `app/api/routes/documents.py`
   ```python
@@ -159,6 +168,7 @@
 - **Acceptance:** POST with a PDF returns 202 + job_id
 
 ### Task 2.2: Save Files to MinIO/S3
+
 - **Status:** ⬜ Not started
 - **File:** `app/storage/s3_client.py`
   ```python
@@ -175,6 +185,7 @@
 - **Acceptance:** File uploaded via API appears in MinIO console (localhost:9001)
 
 ### Task 2.3: Create DB Records for Upload
+
 - **Status:** ⬜ Not started
 - **File:** `app/services/document_service.py`
   ```python
@@ -189,6 +200,7 @@
 - **Acceptance:** Document + job records visible in Postgres
 
 ### Task 2.4: Trigger Background Worker
+
 - **Status:** ⬜ Not started
 - **Files:**
   - `app/workers/celery_app.py` — Celery config (Redis broker)
@@ -202,6 +214,7 @@
 - **Acceptance:** Celery worker picks up dispatched task, logs progress
 
 ### Task 2.5: Build Worker Pipeline Skeleton
+
 - **Status:** ⬜ Not started
 - **Files:**
   - `app/workers/pipeline/extract.py` — `extract_text(file_bytes, content_type) -> str`
@@ -216,13 +229,15 @@
 - **Acceptance:** Upload a PDF → worker processes all stages → document status = completed
 
 ### Task 2.6: Add Auth Skeleton
+
 - **Status:** ⬜ Not started
 - **File:** `app/core/security.py`
+
   ```python
   async def verify_clerk_token(token: str) -> dict:
       # Verify JWT with Clerk public key
       ...
-  
+
   async def get_current_user(
       authorization: str = Header(...),
       db: AsyncSession = Depends(get_db),
@@ -231,17 +246,20 @@
       # Get or create user record
       ...
   ```
+
 - **File:** `app/api/deps.py` — Dependency injection
 - **Acceptance:** Protected endpoints return 401 without valid token
 
 ### Task 2.7: Add Health Endpoints
+
 - **Status:** ⬜ Not started
 - **File:** `app/api/routes/health.py`
+
   ```python
   @router.get("/health/live")
   async def liveness():
       return {"status": "alive"}
-  
+
   @router.get("/health/ready")
   async def readiness(db: AsyncSession = Depends(get_db)):
       checks = {
@@ -253,9 +271,11 @@
       all_ok = all(checks.values())
       return {"status": "ready" if all_ok else "degraded", "checks": checks}
   ```
+
 - **Acceptance:** `/health/ready` returns status of all 4 dependencies
 
 ### Task 2.8: Add Observability Basics
+
 - **Status:** ⬜ Not started
 - **Files:**
   - `app/core/logging.py` — JSON structured logging
@@ -267,81 +287,81 @@
 
 ## Week 1 MVP Checklist
 
-| # | Task | Depends On | Status |
-|---|------|-----------|--------|
-| 1 | Clerk auth integration (sign in/up) | Day 2 auth skeleton | ⬜ |
-| 2 | Workspace CRUD API | Auth | ⬜ |
-| 3 | Collection CRUD API | Workspace | ⬜ |
-| 4 | Document upload (full flow) | Collection + S3 + Worker | ⬜ |
-| 5 | Ingestion status tracking API | Upload | ⬜ |
-| 6 | Text extraction (PDF, DOCX, TXT) | Worker pipeline | ⬜ |
-| 7 | Smart chunking (300-500 tokens) | Text extraction | ⬜ |
-| 8 | Embedding generation (BGE/MiniLM) | Chunking | ⬜ |
-| 9 | Qdrant vector indexing | Embeddings | ⬜ |
-| 10 | RAPTOR tree generation | Indexing | ⬜ |
-| 11 | Hybrid retrieval API (vector + tree) | Qdrant + tree | ⬜ |
-| 12 | Answer generation (LiteLLM) | Retrieval | ⬜ |
-| 13 | Citation formatting | Answer gen | ⬜ |
-| 14 | Chat session persistence (Postgres) | DB | ⬜ |
-| 15 | Next.js frontend scaffolding | Auth | ⬜ |
-| 16 | Chat UI component | Frontend + Chat API | ⬜ |
-| 17 | Document upload UI | Frontend + Upload API | ⬜ |
+| #   | Task                                 | Depends On               | Status |
+| --- | ------------------------------------ | ------------------------ | ------ |
+| 1   | Clerk auth integration (sign in/up)  | Day 2 auth skeleton      | ⬜     |
+| 2   | Workspace CRUD API                   | Auth                     | ⬜     |
+| 3   | Collection CRUD API                  | Workspace                | ⬜     |
+| 4   | Document upload (full flow)          | Collection + S3 + Worker | ⬜     |
+| 5   | Ingestion status tracking API        | Upload                   | ⬜     |
+| 6   | Text extraction (PDF, DOCX, TXT)     | Worker pipeline          | ⬜     |
+| 7   | Smart chunking (300-500 tokens)      | Text extraction          | ⬜     |
+| 8   | Embedding generation (BGE/MiniLM)    | Chunking                 | ⬜     |
+| 9   | Qdrant vector indexing               | Embeddings               | ⬜     |
+| 10  | RAPTOR tree generation               | Indexing                 | ⬜     |
+| 11  | Hybrid retrieval API (vector + tree) | Qdrant + tree            | ⬜     |
+| 12  | Answer generation (LiteLLM)          | Retrieval                | ⬜     |
+| 13  | Citation formatting                  | Answer gen               | ⬜     |
+| 14  | Chat session persistence (Postgres)  | DB                       | ⬜     |
+| 15  | Next.js frontend scaffolding         | Auth                     | ⬜     |
+| 16  | Chat UI component                    | Frontend + Chat API      | ⬜     |
+| 17  | Document upload UI                   | Frontend + Upload API    | ⬜     |
 
 ---
 
 ## Week 2–3 Checklist
 
-| # | Task | Status |
-|---|------|--------|
-| 1 | BGE reranker integration | ⬜ |
-| 2 | Better PDF parsing (tables, figures) | ⬜ |
-| 3 | Retry logic for LLM calls | ⬜ |
-| 4 | Retry logic for ingestion failures | ⬜ |
-| 5 | Real-time job progress (WebSocket/SSE) | ⬜ |
-| 6 | Rate limiting per user | ⬜ |
-| 7 | Input validation hardening | ⬜ |
-| 8 | File size limits + type restrictions | ⬜ |
-| 9 | Better citation metadata (page numbers) | ⬜ |
-| 10 | Collection-scoped retrieval | ⬜ |
-| 11 | Session title auto-generation | ⬜ |
-| 12 | Chat message streaming (WebSocket) | ⬜ |
+| #   | Task                                    | Status |
+| --- | --------------------------------------- | ------ |
+| 1   | BGE reranker integration                | ⬜     |
+| 2   | Better PDF parsing (tables, figures)    | ⬜     |
+| 3   | Retry logic for LLM calls               | ⬜     |
+| 4   | Retry logic for ingestion failures      | ⬜     |
+| 5   | Real-time job progress (WebSocket/SSE)  | ⬜     |
+| 6   | Rate limiting per user                  | ⬜     |
+| 7   | Input validation hardening              | ⬜     |
+| 8   | File size limits + type restrictions    | ⬜     |
+| 9   | Better citation metadata (page numbers) | ⬜     |
+| 10  | Collection-scoped retrieval             | ⬜     |
+| 11  | Session title auto-generation           | ⬜     |
+| 12  | Chat message streaming (WebSocket)      | ⬜     |
 
 ---
 
 ## Month 1 Checklist
 
-| # | Task | Status |
-|---|------|--------|
-| 1 | Audit log table + middleware | ⬜ |
-| 2 | Role-based access control (admin/member/viewer) | ⬜ |
-| 3 | Production S3 configuration | ⬜ |
-| 4 | Secret management (Vault/AWS) | ⬜ |
-| 5 | Automated DB backup jobs | ⬜ |
-| 6 | Disaster recovery plan + test | ⬜ |
-| 7 | GitHub Actions CI pipeline (lint + test + build) | ⬜ |
-| 8 | GitHub Actions CD pipeline (deploy) | ⬜ |
-| 9 | Integration test suite | ⬜ |
-| 10 | E2E test suite | ⬜ |
-| 11 | Automated eval framework | ⬜ |
-| 12 | Admin dashboard (models, jobs, users) | ⬜ |
-| 13 | Model registry with versioning | ⬜ |
+| #   | Task                                             | Status |
+| --- | ------------------------------------------------ | ------ |
+| 1   | Audit log table + middleware                     | ⬜     |
+| 2   | Role-based access control (admin/member/viewer)  | ⬜     |
+| 3   | Production S3 configuration                      | ⬜     |
+| 4   | Secret management (Vault/AWS)                    | ⬜     |
+| 5   | Automated DB backup jobs                         | ⬜     |
+| 6   | Disaster recovery plan + test                    | ⬜     |
+| 7   | GitHub Actions CI pipeline (lint + test + build) | ⬜     |
+| 8   | GitHub Actions CD pipeline (deploy)              | ⬜     |
+| 9   | Integration test suite                           | ⬜     |
+| 10  | E2E test suite                                   | ⬜     |
+| 11  | Automated eval framework                         | ⬜     |
+| 12  | Admin dashboard (models, jobs, users)            | ⬜     |
+| 13  | Model registry with versioning                   | ⬜     |
 
 ---
 
 ## Month 2 Checklist
 
-| # | Task | Status |
-|---|------|--------|
-| 1 | Prometheus metrics endpoint | ⬜ |
-| 2 | Grafana dashboards | ⬜ |
-| 3 | OpenTelemetry distributed tracing | ⬜ |
-| 4 | Per-query cost tracking | ⬜ |
-| 5 | Canary deployment setup | ⬜ |
-| 6 | Feedback review + approval flow | ⬜ |
-| 7 | Prompt versioning + A/B testing | ⬜ |
-| 8 | Tenant data encryption at rest | ⬜ |
-| 9 | Data retention + cleanup policies | ⬜ |
-| 10 | Compliance controls (GDPR basics) | ⬜ |
+| #   | Task                              | Status |
+| --- | --------------------------------- | ------ |
+| 1   | Prometheus metrics endpoint       | ⬜     |
+| 2   | Grafana dashboards                | ⬜     |
+| 3   | OpenTelemetry distributed tracing | ⬜     |
+| 4   | Per-query cost tracking           | ⬜     |
+| 5   | Canary deployment setup           | ⬜     |
+| 6   | Feedback review + approval flow   | ⬜     |
+| 7   | Prompt versioning + A/B testing   | ⬜     |
+| 8   | Tenant data encryption at rest    | ⬜     |
+| 9   | Data retention + cleanup policies | ⬜     |
+| 10  | Compliance controls (GDPR basics) | ⬜     |
 
 ---
 
@@ -410,25 +430,30 @@ pytest-asyncio>=0.23
 ## Accounts & Credentials Creation Guide
 
 ### Step 1: Clerk (Auth)
+
 1. Go to https://clerk.com → Sign up
 2. Create application → "RAPTOR RAG Platform"
 3. Enable Email + Google sign-in
 4. Copy `CLERK_SECRET_KEY` and `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY`
 
 ### Step 2: Sentry (Error Tracking)
+
 1. Go to https://sentry.io → Sign up
 2. Create project → Python / FastAPI
 3. Copy `SENTRY_DSN`
 
 ### Step 3: LLM Provider
+
 - Already have: Groq API key, Ollama local
 - Optional: Get OpenAI / Anthropic keys for production
 
 ### Step 4: Local Services (Docker)
+
 - PostgreSQL, Qdrant, Redis, MinIO all run via Docker Compose
 - No external accounts needed for development
 
 ### Step 5: GitHub
+
 - Repository already exists: `priyankmistry21699-web/raptor-research-assistant`
 - Set up GitHub Actions secrets for CI/CD
 
