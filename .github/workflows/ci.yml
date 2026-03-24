@@ -15,7 +15,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v6
         with:
           python-version: ${{ env.PYTHON_VERSION }}
       - name: Install ruff
@@ -30,7 +30,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v6
         with:
           python-version: ${{ env.PYTHON_VERSION }}
       - name: Install bandit
@@ -72,12 +72,12 @@ jobs:
       RERANKER_ENABLED: "false"
     steps:
       - uses: actions/checkout@v6
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v6
         with:
           python-version: ${{ env.PYTHON_VERSION }}
           cache: pip
       - name: Install dependencies
-        run: pip install -r requirements.txt pytest pytest-asyncio pytest-cov
+        run: pip install -r requirements.txt pytest pytest-asyncio pytest-cov pytest-timeout
       - name: Run tests
         run: pytest tests/ -x --tb=short -q --timeout=120
       - name: Upload coverage
