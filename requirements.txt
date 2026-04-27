@@ -32,7 +32,7 @@ cryptography>=42
 
 ## Monitoring
 sentry-sdk[fastapi]>=2.5
-prometheus-fastapi-instrumentator>=7.0
+prometheus-fastapi-instrumentator>=7.1.0
 
 ## OpenTelemetry (distributed tracing)
 opentelemetry-api>=1.24
