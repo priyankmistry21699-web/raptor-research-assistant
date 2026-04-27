@@ -60,7 +60,7 @@ gradio>=4.30
 streamlit>=1.35
 
 ## Utilities
-numpy>=1.26
+numpy>=2.4.4
 PyYAML>=6.0
 python-dotenv>=1.0
 requests>=2.32
